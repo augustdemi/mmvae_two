@@ -1,0 +1,2 @@
+30: orig.
+33: not exp(logsum) but prod 

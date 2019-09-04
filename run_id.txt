@@ -1,0 +1,10 @@
+0:seq, siwss
+1:seq, relu
+2: separate, relu
+3: solver3 kl/recons rate
+4: model4. one more fc in mnist, 256->512 in svhn
+5: model4. batchnorm 
+7: solver7. mean -> sum. 
+8: one more conv
+10: svhn size 28, maxpool
+11: mnist fc layer change
