@@ -1,0 +1,6 @@
+log/
+ckpts/
+outputs/
+records/
+viz/
+*.xml
