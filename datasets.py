@@ -25,8 +25,8 @@ from torch.utils.data.dataset import Dataset
 from torchvision import transforms
 from utils import transform
 
-
 from utils import transform
+
 
 class DIGIT(Dataset):
     """Images with 0 to 4 digits of non-overlapping MNIST numbers.
@@ -41,11 +41,11 @@ class DIGIT(Dataset):
                              optional function to apply to training outputs
     """
     processed_folder = 'digit'
-    training_file    = 'training.pt'
-    test_file        = 'test.pt'
+    training_file = 'training.pt'
+    test_file = 'test.pt'
 
     def __init__(self, root, train=True):
-        self.root             = os.path.expanduser(root)
+        self.root = os.path.expanduser(root)
 
         # self.transformA        = transforms.Compose([
         #                      transforms.Resize(32),
@@ -54,9 +54,9 @@ class DIGIT(Dataset):
         # self.transformB        = transforms.Compose([
         #                      transforms.ToTensor()
         #                  ])
-        self.train            = train  # training set or test set
+        self.train = train  # training set or test set
 
-        self.input_a, self.input_b = make_dataset_fixed(self.train)
+        self.input_a, self.input_b, self.label = make_dataset_fixed(self.train)
         len(self.input_a)
 
     def __getitem__(self, index):
@@ -67,25 +67,21 @@ class DIGIT(Dataset):
             tuple: (image, target) where target is index of the target class.
         """
 
-        a_img, b_img = self.input_a[index], self.input_b[index]
+        a_img, b_img, label = self.input_a[index], self.input_b[index], self.label[index]
 
         a_img = transform(a_img, resize=32)
 
         b_img = transform(b_img, resize=32)
 
-
-
         # svhn_img = np.transpose(svhn_img, (1, 2, 0))
         # svhn_img = Image.fromarray(svhn_img, mode='RGB')
         # svhn_img = self.transformB(svhn_img)
 
-        return a_img, b_img, index
+        return a_img, b_img, label, index
 
     def __len__(self):
         # return self.input_a.size(0)
         return len(self.input_a)
-
-
 
 
 def load_mnist():
@@ -94,7 +90,7 @@ def load_mnist():
 
     test_loader = torch.utils.data.DataLoader(
         dset.MNIST(root='../data/mnist', train=False, download=True))
-    
+
     train_data = {
         'imgs': train_loader.dataset.train_data.numpy(),
         'labels': train_loader.dataset.train_labels.numpy()
@@ -129,10 +125,8 @@ def load_svhn():
 
 
 def load_fashionMNIST():
-
     train_loader = torch.utils.data.DataLoader(
         dset.FashionMNIST(root='../data/fMNIST', train=True, download=True))
-
 
     test_loader = torch.utils.data.DataLoader(
         dset.FashionMNIST(root='../data/fMNIST', train=False, download=True))
@@ -151,7 +145,6 @@ def load_fashionMNIST():
 
 
 def match_label(mnist, svhn):
-
     a_imgs = {}
     b_imgs = {}
 
@@ -163,41 +156,38 @@ def match_label(mnist, svhn):
     for i in range(len(svhn['labels'])):
         b_imgs[svhn['labels'][i]].append(svhn['imgs'][i])
 
-    x_img, y_img = [], []
+    x_img, y_img, labels = [], [], []
     for i in range(10):
         min_len = min(len(a_imgs[i]), len(b_imgs[i]))
         print('label {} len {}'.format(i, min_len))
         x_img.extend(a_imgs[i][:min_len])
         y_img.extend(b_imgs[i][:min_len])
+        labels.extend([i] * min_len)
 
     # for i in range(10):
     #     print('i = {} : len of inputA={}, len of inputB={}'.format(i, len(a_imgs[i]), len(b_imgs[i])))
     #     a_imgs[i] = np.array(a_imgs[i])
     #     b_imgs[i] = np.array(b_imgs[i])
 
-    return x_img, y_img
-
+    return x_img, y_img, labels
 
 
 def make_dataset_fixed(train):
-
     np.random.seed(681307)
     trainA, testA = load_mnist()
     trainB, testB = load_fashionMNIST()
 
     if train:
-        input_a, input_b = match_label(trainA, trainB)
+        input_a, input_b, labels = match_label(trainA, trainB)
     else:
-        input_a, input_b = match_label(testA, testB)
+        input_a, input_b, labels = match_label(testA, testB)
 
-    return input_a, input_b
-
-
-
+    return input_a, input_b, labels
 
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     # parser.add_argument('--min-digits', type=int, default=0,
     #                     help='minimum number of digits to add to an image')
