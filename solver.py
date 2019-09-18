@@ -662,6 +662,8 @@ class Solver(object):
 
     def check_acc(self, data, target, dataset='mnist', train=True):
         device = torch.device("cuda" if self.use_cuda else "cpu")
+        if self.use_cuda:
+            target = target.cuda()
         model = Net().to(device)
         print('loaded: ', dataset + "_cnn_dict.pt")
         model.load_state_dict(torch.load(dataset + "_cnn_dict.pt"))
