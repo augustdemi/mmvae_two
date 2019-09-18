@@ -77,7 +77,9 @@ class Solver(object):
             self.line_gather = DataGather(
                 'iter', 'recon_both', 'recon_A', 'recon_B',
                 'kl_A', 'kl_B', 'kl_POE',
-                'cont_capacity_loss_infA', 'disc_capacity_loss_infA', 'cont_capacity_loss_infB', 'disc_capacity_loss_infB', 'disc_capacity_loss_POEA', 'disc_capacity_loss_POEB'
+                'cont_capacity_loss_infA', 'disc_capacity_loss_infA', 'cont_capacity_loss_infB', 'disc_capacity_loss_infB', 'disc_capacity_loss_POEA', 'disc_capacity_loss_POEB',
+                'poeA_acc', 'infA_acc', 'synA_acc',
+                'poeB_acc', 'infB_acc', 'synB_acc'
             )
 
             # if self.eval_metrics:
@@ -325,46 +327,26 @@ class Solver(object):
             # save output images (recon, synth, etc.)
             if iteration % self.output_save_iter == 0:
                 # self.save_embedding(iteration, index, muA_infA, muB_infB, muS_infA, muS_infB, muS_POE)
-
-                # 1) save the recon images
-                # self.save_recon(iteration)
-
-                # self.save_recon2(iteration, index, XA, XB,
-                #     torch.sigmoid(XA_infA_recon).data,
-                #     torch.sigmoid(XB_infB_recon).data,
-                #     torch.sigmoid(XA_POE_recon).data,
-                #     torch.sigmoid(XB_POE_recon).data,
-                #     muA_infA, muB_infB, muS_infA, muS_infB, muS_POE,
-                #     logalpha, logalphaA, logalphaB
-                # )
                 z_A, z_B, z_S = self.get_stat()
-                print(">>>>>> Train ACC")
-                self.acc_total(z_A, z_B, train=True, howmany=3)
+                # 1) save the recon images
+                self.save_recon(iteration)
 
-                print(">>>>>> Test ACC")
-                self.acc_total(z_A, z_B, train=False, howmany=3)
+                # 2) save the pure-synthesis images
+                # self.save_synth_pure( iteration, howmany=100 )
+                # 3) save the cross-modal-synthesis images
+                self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
 
-                #
-                #
-                #
-                # # 2) save the pure-synthesis images
-                # # self.save_synth_pure( iteration, howmany=100 )
-                # #
-                # # 3) save the cross-modal-synthesis images
-                # self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
-                #
-                # # 4) save the latent traversed images
-                # self.save_traverseA(iteration, z_A, z_B, z_S)
-                # self.save_traverseB(iteration, z_A, z_B, z_S)
-                # self.save_traverse(iteration, z_A, z_B, z_S)
+                # 4) save the latent traversed images
+                self.save_traverseA(iteration, z_A, z_B, z_S)
+                self.save_traverseB(iteration, z_A, z_B, z_S)
+                self.save_traverse(iteration, z_A, z_B, z_S)
 
-                # self.get_loglike(logalpha, logalphaA, logalphaB)
 
-                # # 3) save the latent traversed images
-                # if self.dataset.lower() == '3dchairs':
-                #     self.save_traverse(iteration, limb=-2, limu=2, inter=0.5)
-                # else:
-                #     self.save_traverse(iteration, limb=-3, limu=3, inter=0.1)
+                # 3) save the latent traversed images
+                if self.dataset.lower() == '3dchairs':
+                    self.save_traverse(iteration, limb=-2, limu=2, inter=0.5)
+                else:
+                    self.save_traverse(iteration, limb=-3, limu=3, inter=0.1)
 
             if iteration % self.eval_metrics_iter == 0:
                 self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
@@ -386,6 +368,11 @@ class Solver(object):
                                         disc_capacity_loss_POEB=disc_capacity_loss_POEB.item()
 
                                         )
+                print(">>>>>> Train ACC")
+                self.acc_total(iteration, z_A, z_B, train=True, howmany=3)
+
+                print(">>>>>> Test ACC")
+                self.acc_total(iteration, z_A, z_B, train=False, howmany=3)
 
             # (visdom) visualize line stats (then flush out)
             if self.viz_on and (iteration % self.viz_la_iter == 0):
@@ -701,6 +688,7 @@ class Solver(object):
             corr = one_pred.eq(one_target.view_as(one_pred)).sum().item()
             print('ACC of digit {}: {:.2f}'.format(i, corr / len(temp[i])) )
         print('-------------------------------------------------')
+        return correct / len(target)
 
     def save_recon(self, iters):
         self.set_mode(train=False)
@@ -756,16 +744,16 @@ class Solver(object):
         XA_infA_recon = torch.sigmoid(self.decoderA(ZA_infA, ZS_infA))
         XB_infB_recon = torch.sigmoid(self.decoderB(ZB_infB, ZS_infB))
 
-        print('=========== save_rec: poeA ACC ============')
-        self.check_acc(XA_POE_recon, label)
-        print('=========== save_rec: infA ACC ============')
-        self.check_acc(XA_infA_recon, label)
-
-
-        print('=========== save_rec: poeB ACC ============')
-        self.check_acc(XB_POE_recon, label, dataset='fmnist')
-        print('=========== save_rec: infB ACC ============')
-        self.check_acc(XB_infB_recon, label, dataset='fmnist')
+        # print('=========== save_rec: poeA ACC ============')
+        # poeA_acc = self.check_acc(XA_POE_recon, label)
+        # print('=========== save_rec: infA ACC ============')
+        # infA_acc = self.check_acc(XA_infA_recon, label)
+        #
+        #
+        # print('=========== save_rec: poeB ACC ============')
+        # poeB_acc = self.check_acc(XB_POE_recon, label, dataset='fmnist')
+        # print('=========== save_rec: infB ACC ============')
+        # infB_acc = self.check_acc(XB_infB_recon, label, dataset='fmnist')
 
         #######################
 
@@ -777,11 +765,6 @@ class Solver(object):
         perm = torch.arange(0, 4 * n).view(4, n).transpose(1, 0)
         perm = perm.contiguous().view(-1)
 
-        ## img
-        # merged = torch.cat(
-        #     [ XA, XB, XA_infA_recon, XB_infB_recon,
-        #       XA_POE_recon, XB_POE_recon, WS ], dim=0
-        # )
         merged = torch.cat(
             [XA, XA_infA_recon, XA_POE_recon, WS], dim=0
         )
@@ -942,10 +925,10 @@ class Solver(object):
         merged = torch.cat([merged, WS], dim=0)
         merged = merged[perm, :].cpu()
 
-        print('=========== cross-synth ACC for XB_synth ============')
-        XB_synth_list = torch.stack(XB_synth_list)
-        label_list = torch.LongTensor(label_list)
-        self.check_acc(XB_synth_list, label_list, dataset='fmnist')
+        # print('=========== cross-synth ACC for XB_synth ============')
+        # XB_synth_list = torch.stack(XB_synth_list)
+        # label_list = torch.LongTensor(label_list)
+        # self.check_acc(XB_synth_list, label_list, dataset='fmnist')
 
         # save the results as image
         if train:
@@ -991,10 +974,10 @@ class Solver(object):
         merged = torch.cat([merged, WS], dim=0)
         merged = merged[perm, :].cpu()
 
-        print('=========== cross-synth ACC for XA_synth ============')
-        XA_synth_list = torch.stack(XA_synth_list)
-        label_list = torch.LongTensor(label_list)
-        self.check_acc(XA_synth_list, label_list, dataset='mnist')
+        # print('=========== cross-synth ACC for XA_synth ============')
+        # XA_synth_list = torch.stack(XA_synth_list)
+        # label_list = torch.LongTensor(label_list)
+        # self.check_acc(XA_synth_list, label_list, dataset='mnist')
 
         # save the results as image
         if train:
@@ -1016,7 +999,7 @@ class Solver(object):
         self.set_mode(train=True)
 
 
-    def acc_total(self, z_A_stat, z_B_stat, train=True, howmany=3):
+    def acc_total(self, iteration, z_A_stat, z_B_stat, train=True, howmany=3):
 
         self.set_mode(train=False)
 
@@ -1085,15 +1068,15 @@ class Solver(object):
 
         print('=========== Reconstructed ACC  ============')
         print('PoeA')
-        self.check_acc(XA_POE_recon, label, train=train)
+        poeA_acc = self.check_acc(XA_POE_recon, label, train=train)
         print('InfA')
-        self.check_acc(XA_infA_recon, label, train=train)
+        infA_acc = self.check_acc(XA_infA_recon, label, train=train)
         print('PoeB')
-        self.check_acc(XB_POE_recon, label, dataset='fmnist', train=train)
+        poeB_acc = self.check_acc(XB_POE_recon, label, dataset='fmnist', train=train)
         print('InfB')
-        self.check_acc(XB_infB_recon, label, dataset='fmnist', train=train)
+        infB_acc = self.check_acc(XB_infB_recon, label, dataset='fmnist', train=train)
 
-        #$$$$$$$$$$$$$$
+
         n = len(fixed_idxs200)
 
         ######## 1) generate xB from given xA (A2B) ########
@@ -1113,7 +1096,7 @@ class Solver(object):
         print('=========== cross-synth ACC for XB_synth ============')
         XB_synth_list = torch.stack(XB_synth_list)
         label_list = torch.LongTensor(label_list)
-        self.check_acc(XB_synth_list, label_list, dataset='fmnist', train=train)
+        synB_acc = self.check_acc(XB_synth_list, label_list, dataset='fmnist', train=train)
 
 
         ######## 2) generate xA from given xB (B2A) ########
@@ -1131,8 +1114,17 @@ class Solver(object):
         print('=========== cross-synth ACC for XA_synth ============')
         XA_synth_list = torch.stack(XA_synth_list)
         label_list = torch.LongTensor(label_list)
-        self.check_acc(XA_synth_list, label_list, train=train)
+        synA_acc = self.check_acc(XA_synth_list, label_list, train=train)
 
+
+        #@@@@@
+        if not train:
+            self.line_gather.insert(synA_acc=synA_acc,
+                                    synB_acc=synB_acc,
+                                    poeA_acc=poeA_acc,
+                                    poeB_acc=poeB_acc,
+                                    infA_acc=infA_acc,
+                                    infB_acc=infB_acc)
         self.set_mode(train=True)
 
     def get_stat(self):
