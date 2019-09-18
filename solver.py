@@ -1409,8 +1409,8 @@ class Solver(object):
             # zB, zS = encB(xB)
             fixed_zmuB, _, _, cate_prob_infB = encoderB(fixed_XB)
 
-            fixed_cate_probS = torch.exp(
-                torch.log(torch.tensor(1 / 10)) + torch.log(cate_prob_infA) + torch.log(cate_prob_infB))
+            fixed_cate_probS = torch.tensor(1 / 10) * cate_prob_infA * cate_prob_infB
+
             fixed_zS = sample_gumbel_softmax(self.use_cuda, fixed_cate_probS, train=False)
 
 
