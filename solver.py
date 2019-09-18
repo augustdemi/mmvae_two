@@ -304,10 +304,7 @@ class Solver(object):
                                       '    kl_infA = %.3f, kl_infB = %.3f, kl_POE = %.3f' + \
                                       '    cont_capacity_loss_infA = %.3f, disc_capacity_loss_infA = %.3f\n' + \
                                       '    cont_capacity_loss_infB = %.3f, disc_capacity_loss_infB = %.3f\n' + \
-                                      '    disc_capacity_loss_POEA = %.3f, disc_capacity_loss_POEB = %.3f\n' + \
-                                      '    poeA_acc = %.3f, poeB_acc = %.3f\n' + \
-                                      '    infA_acc = %.3f, infB_acc = %.3f\n' + \
-                                      '    synA_acc = %.3f, synB_acc = %.3f\n'
+                                      '    disc_capacity_loss_POEA = %.3f, disc_capacity_loss_POEB = %.3f\n'
                               ) % \
                           (iteration, epoch,
                            vae_loss.item(), loss_recon.item(), loss_capa.item(),
@@ -315,11 +312,8 @@ class Solver(object):
                            loss_kl_infA.item(), loss_kl_infB.item(), loss_kl_POE.item(),
                            cont_capacity_loss_infA.item(), disc_capacity_loss_infA.item(),
                            cont_capacity_loss_infB.item(), disc_capacity_loss_infB.item(),
-                           disc_capacity_loss_POEA.item(), disc_capacity_loss_POEB.item(),
-                           poeA_acc.item(), poeB_acc.item(),
-                           infA_acc.item(), infB_acc.item(),
-                           synA_acc.item(), synB_acc.item()
-                           )
+                           disc_capacity_loss_POEA.item(), disc_capacity_loss_POEB.item())
+
                 print(prn_str)
                 if self.record_file:
                     record = open(self.record_file, 'a')
@@ -354,14 +348,6 @@ class Solver(object):
                 else:
                     self.save_traverse(iteration, limb=-3, limu=3, inter=0.1)
 
-                print(">>>>>> Train ACC")
-                (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B,
-                                                                                              train=True, howmany=3)
-
-                print(">>>>>> Test ACC")
-                (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B, train=False,
-                                                                                              howmany=3)
-
             if iteration % self.eval_metrics_iter == 0:
                 self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
 
@@ -371,6 +357,16 @@ class Solver(object):
 
             # (visdom) insert current line stats
             if self.viz_on and (iteration % self.viz_ll_iter == 0):
+                z_A, z_B, z_S = self.get_stat()
+
+                print(">>>>>> Train ACC")
+                (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B,
+                                                                                              train=True, howmany=3)
+
+                print(">>>>>> Test ACC")
+                (self.synA_acc, self.synB_acc, self.poeA_acc, self.poeB_acc, self.infA_acc, self.infB_acc) = self.acc_total(z_A, z_B, train=False,
+                                                                                              howmany=3)
+
                 self.line_gather.insert(iter=iteration,
                                         recon_both=loss_recon_POE.item(),
                                         recon_A=loss_recon_infA.item(),
@@ -384,12 +380,12 @@ class Solver(object):
                                         disc_capacity_loss_infB=disc_capacity_loss_infB.item(),
                                         disc_capacity_loss_POEA=disc_capacity_loss_POEA.item(),
                                         disc_capacity_loss_POEB=disc_capacity_loss_POEB.item(),
-                                        synA_acc=synA_acc,
-                                        synB_acc=synB_acc,
-                                        poeA_acc=poeA_acc,
-                                        poeB_acc=poeB_acc,
-                                        infA_acc=infA_acc,
-                                        infB_acc=infB_acc)
+                                        synA_acc=synA_acc.item(),
+                                        synB_acc=synB_acc.item(),
+                                        poeA_acc=poeA_acc.item(),
+                                        poeB_acc=poeB_acc.item(),
+                                        infA_acc=infA_acc.item(),
+                                        infB_acc=infB_acc.item())
 
 
             # (visdom) visualize line stats (then flush out)
