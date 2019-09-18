@@ -709,7 +709,7 @@ class Solver(object):
 
         mkdirs(self.output_dir_recon)
 
-        fixed_idxs = [3246, 7000, 14305, 19000, 27444, 33100, 38000, 45231, 51000, 55121]
+        fixed_idxs = [3246, 7001, 14305, 19000, 27444, 33100, 38000, 45231, 51000, 55121]
 
         fixed_idxs60 = []
         for idx in fixed_idxs:
@@ -727,7 +727,6 @@ class Solver(object):
             if self.use_cuda:
                 XA[i] = XA[i].cuda()
                 XB[i] = XB[i].cuda()
-                label[i] = label[i].cuda()
 
         XA = torch.stack(XA)
         XB = torch.stack(XB)
@@ -876,7 +875,6 @@ class Solver(object):
             if self.use_cuda:
                 fixed_XA[i] = fixed_XA[i].cuda()
                 fixed_XB[i] = fixed_XB[i].cuda()
-                label[i] = label[i].cuda()
 
         fixed_XA = torch.stack(fixed_XA)
         fixed_XB = torch.stack(fixed_XB)
@@ -1039,7 +1037,6 @@ class Solver(object):
             if self.use_cuda:
                 fixed_XA[i] = fixed_XA[i].cuda()
                 fixed_XB[i] = fixed_XB[i].cuda()
-                label[i] = label[i].cuda()
 
         # check if each digit was selected.
         cnt = [0] * 10
@@ -1174,7 +1171,7 @@ class Solver(object):
 
         if self.record_file:
             ####
-            fixed_idxs = [3246, 7000, 14305, 19000, 27444, 33100, 38000, 45231, 51000, 55121]
+            fixed_idxs = [3246, 7001, 14305, 19000, 27444, 33100, 38000, 45231, 51000, 55121]
 
             fixed_XA = [0] * len(fixed_idxs)
             fixed_XB = [0] * len(fixed_idxs)
@@ -1277,7 +1274,7 @@ class Solver(object):
 
         if self.record_file:
             ####
-            fixed_idxs = [3246, 7000, 14305, 19000, 27444, 33100, 38000, 45231, 51000, 55121]
+            fixed_idxs = [3246, 7001, 14305, 19000, 27444, 33100, 38000, 45231, 51000, 55121]
 
             fixed_XA = [0] * len(fixed_idxs)
             fixed_XB = [0] * len(fixed_idxs)
@@ -1385,7 +1382,7 @@ class Solver(object):
 
         if self.record_file:
             ####
-            fixed_idxs = [3246, 7000, 14305, 19000, 27444, 33100, 38000, 45231, 51000, 55121]
+            fixed_idxs = [3246, 7001, 14305, 19000, 27444, 33100, 38000, 45231, 51000, 55121]
 
             fixed_XA = [0] * len(fixed_idxs)
             fixed_XB = [0] * len(fixed_idxs)
