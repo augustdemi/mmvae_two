@@ -184,9 +184,8 @@ class Solver(object):
 
         # iterators from dataloader
         iterator1 = iter(self.data_loader)
-        iterator2 = iter(self.data_loader)
 
-        iter_per_epoch = min(len(iterator1), len(iterator2))
+        iter_per_epoch = len(iterator1)
 
         start_iter = self.ckpt_load_iter + 1
         epoch = int(start_iter / iter_per_epoch)
@@ -198,7 +197,6 @@ class Solver(object):
                 print('==== epoch %d done ====' % epoch)
                 epoch += 1
                 iterator1 = iter(self.data_loader)
-                iterator2 = iter(self.data_loader)
 
             # ============================================
             #          TRAIN THE VAE (ENC & DEC)
