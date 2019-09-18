@@ -364,7 +364,7 @@ class Solver(object):
                                                                                               train=True, howmany=3)
 
                 print(">>>>>> Test ACC")
-                (self.synA_acc, self.synB_acc, self.poeA_acc, self.poeB_acc, self.infA_acc, self.infB_acc) = self.acc_total(z_A, z_B, train=False,
+                (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B, train=False,
                                                                                               howmany=3)
 
                 self.line_gather.insert(iter=iteration,
