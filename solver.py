@@ -327,24 +327,20 @@ class Solver(object):
                 # self.save_embedding(iteration, index, muA_infA, muB_infB, muS_infA, muS_infB, muS_POE)
                 z_A, z_B, z_S = self.get_stat()
                 # 1) save the recon images
-                self.save_recon(iteration)
+                # self.save_recon(iteration)
 
                 # 2) save the pure-synthesis images
                 # self.save_synth_pure( iteration, howmany=100 )
                 # 3) save the cross-modal-synthesis images
-                self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
+                # self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
 
                 # 4) save the latent traversed images
-                self.save_traverseA(iteration, z_A, z_B, z_S)
-                self.save_traverseB(iteration, z_A, z_B, z_S)
+                # self.save_traverseA(iteration, z_A, z_B, z_S)
+                # self.save_traverseB(iteration, z_A, z_B, z_S)
                 self.save_traverse(iteration, z_A, z_B, z_S)
+                self.save_traverse(iteration, z_A, z_B, z_S, train=False)
 
 
-                # 3) save the latent traversed images
-                if self.dataset.lower() == '3dchairs':
-                    self.save_traverse(iteration, limb=-2, limu=2, inter=0.5)
-                else:
-                    self.save_traverse(iteration, limb=-3, limu=3, inter=0.1)
 
             if iteration % self.eval_metrics_iter == 0:
                 self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
@@ -1365,7 +1361,7 @@ class Solver(object):
         self.set_mode(train=True)
 
     ###
-    def save_traverse(self, iters, z_A, z_B, z_S, loc=-1):
+    def save_traverse(self, iters, z_A, z_B, z_S, loc=-1, train=True):
 
         self.set_mode(train=False)
 
@@ -1379,10 +1375,18 @@ class Solver(object):
         print('interpolationA: ', np.min(np.array(z_A)), np.max(np.array(z_A)))
         print('interpolationB: ', np.min(np.array(z_B)), np.max(np.array(z_B)))
         print('interpolationS: ', np.min(np.array(z_S)), np.max(np.array(z_S)))
+        if train:
+            data_loader = self.data_loader
+            fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
+            out_dir = os.path.join(self.output_dir_trvsl, str(iters), 'train')
+        else:
+            data_loader = self.test_data_loader
+            fixed_idxs = [2, 982, 2300, 3400, 4500, 5500, 6500, 7500, 8500, 9500]
+            out_dir = os.path.join(self.output_dir_trvsl, str(iters), 'test')
+
 
         if self.record_file:
             ####
-            fixed_idxs = [3246, 7001, 14305, 19000, 27444, 33100, 38000, 45231, 51000, 55121]
 
             fixed_XA = [0] * len(fixed_idxs)
             fixed_XB = [0] * len(fixed_idxs)
@@ -1390,7 +1394,7 @@ class Solver(object):
             for i, idx in enumerate(fixed_idxs):
 
                 fixed_XA[i], fixed_XB[i] = \
-                    self.data_loader.dataset.__getitem__(idx)[0:2]
+                    data_loader.dataset.__getitem__(idx)[0:2]
                 if self.use_cuda:
                     fixed_XA[i] = fixed_XA[i].cuda()
                     fixed_XB[i] = fixed_XB[i].cuda()
@@ -1489,8 +1493,6 @@ class Solver(object):
 
 
         # save the generated files, also the animated gifs
-        out_dir = os.path.join(self.output_dir_trvsl, str(iters), 'train')
-        mkdirs(self.output_dir_trvsl)
         mkdirs(out_dir)
 
         for j, val in enumerate(interpolationA):
