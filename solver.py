@@ -304,8 +304,11 @@ class Solver(object):
                                       '    kl_infA = %.3f, kl_infB = %.3f, kl_POE = %.3f' + \
                                       '    cont_capacity_loss_infA = %.3f, disc_capacity_loss_infA = %.3f\n' + \
                                       '    cont_capacity_loss_infB = %.3f, disc_capacity_loss_infB = %.3f\n' + \
-                                      '    disc_capacity_loss_POEA = %.3f, disc_capacity_loss_POEB = %.3f\n'
-                          ) % \
+                                      '    disc_capacity_loss_POEA = %.3f, disc_capacity_loss_POEB = %.3f\n' + \
+                                      '    poeA_acc = %.3f, poeB_acc = %.3f\n' + \
+                                      '    infA_acc = %.3f, infB_acc = %.3f\n' + \
+                                      '    synA_acc = %.3f, synB_acc = %.3f\n'
+                              ) % \
                           (iteration, epoch,
                            vae_loss.item(), loss_recon.item(), loss_capa.item(),
                            loss_recon_infA.item(), loss_recon_infB.item(), loss_recon_POE.item(),
@@ -313,6 +316,9 @@ class Solver(object):
                            cont_capacity_loss_infA.item(), disc_capacity_loss_infA.item(),
                            cont_capacity_loss_infB.item(), disc_capacity_loss_infB.item(),
                            disc_capacity_loss_POEA.item(), disc_capacity_loss_POEB.item(),
+                           poeA_acc.item(), poeB_acc.item(),
+                           infA_acc.item(), infB_acc.item(),
+                           synA_acc.item(), synB_acc.item()
                            )
                 print(prn_str)
                 if self.record_file:
@@ -351,6 +357,15 @@ class Solver(object):
             if iteration % self.eval_metrics_iter == 0:
                 self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
 
+
+            print(">>>>>> Train ACC")
+            (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B,
+                                                                                          train=True, howmany=3)
+
+            print(">>>>>> Test ACC")
+            (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B, train=False, howmany=3)
+
+
             # (visdom) insert current line stats
             if self.viz_on and (iteration % self.viz_ll_iter == 0):
                 self.line_gather.insert(iter=iteration,
@@ -365,14 +380,14 @@ class Solver(object):
                                         cont_capacity_loss_infB=cont_capacity_loss_infB.item(),
                                         disc_capacity_loss_infB=disc_capacity_loss_infB.item(),
                                         disc_capacity_loss_POEA=disc_capacity_loss_POEA.item(),
-                                        disc_capacity_loss_POEB=disc_capacity_loss_POEB.item()
+                                        disc_capacity_loss_POEB=disc_capacity_loss_POEB.item(),
+                                        synA_acc=synA_acc,
+                                        synB_acc=synB_acc,
+                                        poeA_acc=poeA_acc,
+                                        poeB_acc=poeB_acc,
+                                        infA_acc=infA_acc,
+                                        infB_acc=infB_acc)
 
-                                        )
-                print(">>>>>> Train ACC")
-                self.acc_total(iteration, z_A, z_B, train=True, howmany=3)
-
-                print(">>>>>> Test ACC")
-                self.acc_total(iteration, z_A, z_B, train=False, howmany=3)
 
             # (visdom) visualize line stats (then flush out)
             if self.viz_on and (iteration % self.viz_la_iter == 0):
@@ -999,7 +1014,7 @@ class Solver(object):
         self.set_mode(train=True)
 
 
-    def acc_total(self, iteration, z_A_stat, z_B_stat, train=True, howmany=3):
+    def acc_total(self, z_A_stat, z_B_stat, train=True, howmany=3):
 
         self.set_mode(train=False)
 
@@ -1041,7 +1056,7 @@ class Solver(object):
         muA_infA, stdA_infA, logvarA_infA, cate_prob_infA = self.encoderA(fixed_XA)
         muB_infB, stdB_infB, logvarB_infB, cate_prob_infB = self.encoderB(fixed_XB)
 
-        #$$$$$$$$$$$$$$ ACC for reconstructed img
+        ################### ACC for reconstructed img
 
         # zS = encAB(xA,xB) via POE
         cate_prob_POE = torch.tensor(1 / 10) * cate_prob_infA * cate_prob_infB
@@ -1076,9 +1091,8 @@ class Solver(object):
         print('InfB')
         infB_acc = self.check_acc(XB_infB_recon, label, dataset='fmnist', train=train)
 
-
+        ################### ACC for synthesized img
         n = len(fixed_idxs200)
-
         ######## 1) generate xB from given xA (A2B) ########
         XB_synth_list = []
         label_list = []
@@ -1116,16 +1130,8 @@ class Solver(object):
         label_list = torch.LongTensor(label_list)
         synA_acc = self.check_acc(XA_synth_list, label_list, train=train)
 
-
-        #@@@@@
-        if not train:
-            self.line_gather.insert(synA_acc=synA_acc,
-                                    synB_acc=synB_acc,
-                                    poeA_acc=poeA_acc,
-                                    poeB_acc=poeB_acc,
-                                    infA_acc=infA_acc,
-                                    infB_acc=infB_acc)
         self.set_mode(train=True)
+        return (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc)
 
     def get_stat(self):
         encoderA = self.encoderA
@@ -1512,6 +1518,7 @@ class Solver(object):
         self.viz.close(env=self.name + '/lines', win=self.win_id['recon'])
         self.viz.close(env=self.name + '/lines', win=self.win_id['kl'])
         self.viz.close(env=self.name + '/lines', win=self.win_id['capa'])
+        self.viz.close(env=self.name + '/lines', win=self.win_id['acc'])
 
         # if self.eval_metrics:
         #     self.viz.close(env=self.name+'/lines', win=self.win_id['metrics'])
@@ -1536,6 +1543,13 @@ class Solver(object):
         disc_capacity_loss_POEA = torch.Tensor(data['disc_capacity_loss_POEA'])
         disc_capacity_loss_POEB = torch.Tensor(data['disc_capacity_loss_POEB'])
 
+        poeA_acc = torch.Tensor(data['poeA_acc'])
+        infA_acc = torch.Tensor(data['infA_acc'])
+        synA_acc = torch.Tensor(data['synA_acc'])
+        poeB_acc = torch.Tensor(data['poeB_acc'])
+        infB_acc = torch.Tensor(data['infB_acc'])
+        synB_acc = torch.Tensor(data['synB_acc'])
+
 
         recons = torch.stack(
             [recon_both.detach(), recon_A.detach(), recon_B.detach()], -1
@@ -1547,6 +1561,11 @@ class Solver(object):
         each_capa = torch.stack(
             [cont_capacity_loss_infA.detach(), disc_capacity_loss_infA.detach(), cont_capacity_loss_infB.detach(), disc_capacity_loss_infB.detach(), disc_capacity_loss_POEA.detach(), disc_capacity_loss_POEB.detach()], -1
         )
+
+        acc = torch.stack(
+            [poeA_acc.detach(), infA_acc.detach(), synA_acc.detach(), poeB_acc.detach(), infB_acc.detach(), synB_acc.detach()], -1
+        )
+
 
         self.viz.line(
             X=iters, Y=recons, env=self.name + '/lines',
@@ -1566,7 +1585,15 @@ class Solver(object):
             X=iters, Y=each_capa, env=self.name + '/lines',
             win=self.win_id['capa'], update='append',
             opts=dict(xlabel='iter', ylabel='logalpha',
-                      title='Capacity loss', legend=['cont_capaA', 'disc_capaA', 'cont_capaB', 'disc_capaB', 'disc_capaPOEA', 'disc_capaPOEB']),
+                      title='Capacity loss',
+                      legend=['cont_capaA', 'disc_capaA', 'cont_capaB', 'disc_capaB', 'disc_capaPOEA', 'disc_capaPOEB']),
+        )
+
+        self.viz.line(
+            X=iters, Y=acc, env=self.name + '/lines',
+            win=self.win_id['acc'], update='append',
+            opts=dict(xlabel='iter', ylabel='accuracy',
+            title = 'Classification Acc', legend = ['poeA_acc', 'infA_acc', 'synA_acc', 'poeB_acc', 'infB_acc', 'synB_acc']),
         )
 
 
