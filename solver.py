@@ -380,12 +380,12 @@ class Solver(object):
                                         disc_capacity_loss_infB=disc_capacity_loss_infB.item(),
                                         disc_capacity_loss_POEA=disc_capacity_loss_POEA.item(),
                                         disc_capacity_loss_POEB=disc_capacity_loss_POEB.item(),
-                                        synA_acc=synA_acc.item(),
-                                        synB_acc=synB_acc.item(),
-                                        poeA_acc=poeA_acc.item(),
-                                        poeB_acc=poeB_acc.item(),
-                                        infA_acc=infA_acc.item(),
-                                        infB_acc=infB_acc.item())
+                                        synA_acc=synA_acc,
+                                        synB_acc=synB_acc,
+                                        poeA_acc=poeA_acc,
+                                        poeB_acc=poeB_acc,
+                                        infA_acc=infA_acc,
+                                        infB_acc=infB_acc)
 
 
             # (visdom) visualize line stats (then flush out)
