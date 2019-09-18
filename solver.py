@@ -354,16 +354,19 @@ class Solver(object):
                 else:
                     self.save_traverse(iteration, limb=-3, limu=3, inter=0.1)
 
+                print(">>>>>> Train ACC")
+                (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B,
+                                                                                              train=True, howmany=3)
+
+                print(">>>>>> Test ACC")
+                (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B, train=False,
+                                                                                              howmany=3)
+
             if iteration % self.eval_metrics_iter == 0:
                 self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
 
 
-            print(">>>>>> Train ACC")
-            (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B,
-                                                                                          train=True, howmany=3)
 
-            print(">>>>>> Test ACC")
-            (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B, train=False, howmany=3)
 
 
             # (visdom) insert current line stats
