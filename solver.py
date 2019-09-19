@@ -72,7 +72,7 @@ class Solver(object):
             )
             self.line_gather = DataGather(
                 'iter', 'recon_both', 'recon_A', 'recon_B',
-                'kl_A', 'kl_B', 'kl_POE'
+                'kl_A', 'kl_B', 'kl_POE',
                 'poeA_acc', 'infA_acc', 'synA_acc',
                 'poeB_acc', 'infB_acc', 'synB_acc'
             )
