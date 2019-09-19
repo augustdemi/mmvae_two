@@ -307,7 +307,7 @@ class Solver(object):
             # loss_kl_POE
             loss_kl_POE = 0.5 * (loss_kl_POEA + loss_kl_POEB)
 
-            loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
+            loss_kl = loss_kl_infA + loss_kl_infB
 
             ################## total loss for vae ####################
             vae_loss = loss_recon + loss_kl
