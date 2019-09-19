@@ -268,11 +268,43 @@ class Solver(object):
 
             #================================== decomposed KL ========================================
 
-            loss_kl_infA = self.decomposeKL({'cont': ZA_infA, 'disc': ZS_infA}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategA})
-            loss_kl_infB = self.decomposeKL({'cont': ZB_infB, 'disc': ZS_infB}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategB})
+            log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_infA}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategA},
+                                                                                len(self.data_loader.dataset),
+                                                                                is_mss=self.is_mss)
 
-            loss_kl_POEA = self.decomposeKL({'cont': ZA_infA, 'disc': ZS_POE}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategS})
-            loss_kl_POEB = self.decomposeKL({'cont': ZB_infB, 'disc': ZS_POE}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategS})
+
+            log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_infB}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategB},
+                                                                                len(self.data_loader.dataset),
+                                                                                is_mss=self.is_mss)
+
+            log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_POE}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategS},
+                                                                                len(self.data_loader.dataset),
+                                                                                is_mss=self.is_mss)
+
+            log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_POE}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategS},
+                                                                                len(self.data_loader.dataset),
+                                                                                is_mss=self.is_mss)
+            # loss_kl_infA
+            mi_loss_A = (log_q_zCx_A - log_qz_A).mean()
+            tc_loss_A = (log_qz_A - log_prod_qzi_A).sum(dim=0).div(self.batch_size)
+            dw_kl_loss_A = (log_prod_qzi_A - log_pz_A).mean()
+            loss_kl_infA = self.beta1 * mi_loss_A + self.beta2 * tc_loss_A + self.beta3 * dw_kl_loss_A
+            # loss_kl_infB
+            mi_loss_B = (log_q_zCx_B - log_qz_B).mean()
+            tc_loss_B = (log_qz_B - log_prod_qzi_B).sum(dim=0).div(self.batch_size)
+            dw_kl_loss_B = (log_prod_qzi_B - log_pz_B).mean()
+            loss_kl_infB = self.beta1 * mi_loss_B + self.beta2 * tc_loss_B + self.beta3 * dw_kl_loss_B
+            # loss_kl_POEA
+            mi_loss_POEA = (log_q_zCx_POEA - log_qz_POEA).mean()
+            tc_loss_POEA = (log_qz_POEA - log_prod_qzi_POEA).sum(dim=0).div(self.batch_size)
+            dw_kl_loss_POEA = (log_prod_qzi_POEA - log_pz_POEA).mean()
+            loss_kl_POEA = self.beta1 * mi_loss_POEA + self.beta2 * tc_loss_POEA + self.beta3 * dw_kl_loss_POEA
+            # loss_kl_POEB
+            mi_loss_POEB = (log_q_zCx_POEB - log_qz_POEB).mean()
+            tc_loss_POEB = (log_qz_POEB - log_prod_qzi_POEB).sum(dim=0).div(self.batch_size)
+            dw_kl_loss_POEB = (log_prod_qzi_POEB - log_pz_POEB).mean()
+            loss_kl_POEB = self.beta1 * mi_loss_POEB + self.beta2 * tc_loss_POEB + self.beta3 * dw_kl_loss_POEB
+            # loss_kl_POE
             loss_kl_POE = 0.5 * (loss_kl_POEA + loss_kl_POEB)
 
             loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
@@ -734,11 +766,12 @@ class Solver(object):
         # encoder samples (for training)
         ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
         ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
-        ZS_POE = sample_gumbel_softmax(self.use_cuda, cate_prob_POE, train=False)
+
 
         # encoder samples (for cross-modal prediction)
         ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA, train=False)
         ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB, train=False)
+        ZS_POE = sample_gumbel_softmax(self.use_cuda, cate_prob_POE, train=False)
 
         # reconstructed samples (given joint modal observation)
         XA_POE_recon = torch.sigmoid(self.decoderA(ZA_infA, ZS_POE))
@@ -1051,14 +1084,12 @@ class Solver(object):
         # encoder samples (for training)
         ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
         ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
-        ZS_POE = sample_gumbel_softmax(self.use_cuda, cate_prob_POE, train=False)
+
 
         # encoder samples (for cross-modal prediction)
         ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA, train=False)
         ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB, train=False)
-        if self.use_cuda:
-            ZS_infA = ZS_infA.cuda()
-            ZS_infB = ZS_infB.cuda()
+        ZS_POE = sample_gumbel_softmax(self.use_cuda, cate_prob_POE, train=False)
 
         # reconstructed samples (given joint modal observation)
         XA_POE_recon = torch.sigmoid(self.decoderA(ZA_infA, ZS_POE))
