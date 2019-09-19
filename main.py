@@ -77,6 +77,13 @@ def create_parser():
       help='TC' )
     parser.add_argument( '--beta3', default=1.0, type=float,
       help='Dim-wise KL' )
+
+    parser.add_argument( '--beta11', default=1.0, type=float,
+      help='MIB' )
+    parser.add_argument( '--beta22', default=1.0, type=float,
+      help='TCB' )
+    parser.add_argument( '--beta33', default=1.0, type=float,
+      help='Dim-wise KLB' )
     parser.add_argument( '--is_mss', default=False, type=str2bool,
       help='Minibatch Stratified Sampling' )
 

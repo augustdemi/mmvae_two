@@ -62,6 +62,10 @@ class Solver(object):
         self.beta1 = args.beta1
         self.beta2 = args.beta2
         self.beta3 = args.beta3
+
+        self.beta11 = args.beta11
+        self.beta22 = args.beta22
+        self.beta33 = args.beta33
         self.is_mss = args.is_mss
 
         # visdom setup
@@ -74,6 +78,10 @@ class Solver(object):
                 'iter', 'recon_both', 'recon_A', 'recon_B',
                 'kl_A', 'kl_B', 'kl_POE',
                 'tc_loss', 'mi_loss', 'dw_kl_loss',
+                'tc_loss_A', 'mi_loss_A', 'dw_kl_loss_A',
+                'tc_loss_B', 'mi_loss_B', 'dw_kl_loss_B',
+                'tc_loss_POEA', 'mi_loss_POEA', 'dw_kl_loss_POEA',
+                'tc_loss_POEB', 'mi_loss_POEB', 'dw_kl_loss_POEB',
                 'poeA_acc', 'infA_acc', 'synA_acc',
                 'poeB_acc', 'infB_acc', 'synB_acc'
             )
@@ -294,7 +302,7 @@ class Solver(object):
             mi_loss_B = (log_q_zCx_B - log_qz_B).mean()
             tc_loss_B = (log_qz_B - log_prod_qzi_B).sum(dim=0).div(self.batch_size)
             dw_kl_loss_B = (log_prod_qzi_B - log_pz_B).mean()
-            loss_kl_infB = self.beta1 * mi_loss_B + self.beta2 * tc_loss_B + self.beta3 * dw_kl_loss_B
+            loss_kl_infB = self.beta11 * mi_loss_B + self.beta22 * tc_loss_B + self.beta33 * dw_kl_loss_B
             # loss_kl_POEA
             mi_loss_POEA = (log_q_zCx_POEA - log_qz_POEA).mean()
             tc_loss_POEA = (log_qz_POEA - log_prod_qzi_POEA).sum(dim=0).div(self.batch_size)
@@ -304,7 +312,7 @@ class Solver(object):
             mi_loss_POEB = (log_q_zCx_POEB - log_qz_POEB).mean()
             tc_loss_POEB = (log_qz_POEB - log_prod_qzi_POEB).sum(dim=0).div(self.batch_size)
             dw_kl_loss_POEB = (log_prod_qzi_POEB - log_pz_POEB).mean()
-            loss_kl_POEB = self.beta1 * mi_loss_POEB + self.beta2 * tc_loss_POEB + self.beta3 * dw_kl_loss_POEB
+            loss_kl_POEB = self.beta11 * mi_loss_POEB + self.beta22 * tc_loss_POEB + self.beta33 * dw_kl_loss_POEB
             # loss_kl_POE
             loss_kl_POE = 0.5 * (loss_kl_POEA + loss_kl_POEB)
 
@@ -394,15 +402,28 @@ class Solver(object):
                                         kl_A=loss_kl_infA.item(),
                                         kl_B=loss_kl_infB.item(),
                                         kl_POE=loss_kl_POE.item(),
-                                        tc_loss=tc_loss.item(),
-                                        mi_loss=mi_loss.item(),
-                                        dw_kl_loss=dw_kl_loss.item(),
                                         synA_acc=synA_acc,
                                         synB_acc=synB_acc,
                                         poeA_acc=poeA_acc,
                                         poeB_acc=poeB_acc,
                                         infA_acc=infA_acc,
-                                        infB_acc=infB_acc)
+                                        infB_acc=infB_acc,
+                                        tc_loss=tc_loss.item(),
+                                        mi_loss=mi_loss.item(),
+                                        dw_kl_loss=dw_kl_loss.item(),
+                                        tc_loss_A=tc_loss_A.item(),
+                                        mi_loss_A=mi_loss_A.item(),
+                                        dw_kl_loss_A=dw_kl_loss_A.item(),
+                                        tc_loss_B=tc_loss_B.item(),
+                                        mi_loss_B=mi_loss_B.item(),
+                                        dw_kl_loss_B=dw_kl_loss_B.item(),
+                                        tc_loss_POEA=tc_loss_POEA.item(),
+                                        mi_loss_POEA=mi_loss_POEA.item(),
+                                        dw_kl_loss_POEA=dw_kl_loss_POEA.item(),
+                                        tc_loss_POEB=tc_loss_POEB.item(),
+                                        mi_loss_POEB=mi_loss_POEB.item(),
+                                        dw_kl_loss_POEB=dw_kl_loss_POEB.item(),
+                                        )
 
 
             # (visdom) visualize line stats (then flush out)
@@ -1582,6 +1603,20 @@ class Solver(object):
         mi_loss =  torch.Tensor(data['mi_loss'])
         dw_kl_loss =  torch.Tensor(data['dw_kl_loss'])
 
+        tc_loss_A = torch.Tensor(data['tc_loss_A'])
+        mi_loss_A =  torch.Tensor(data['mi_loss_A'])
+        dw_kl_loss_A =  torch.Tensor(data['dw_kl_loss_A'])
+        tc_loss_B = torch.Tensor(data['tc_loss_B'])
+        mi_loss_B =  torch.Tensor(data['mi_loss_B'])
+        dw_kl_loss_B =  torch.Tensor(data['dw_kl_loss_B'])
+        tc_loss_POEA = torch.Tensor(data['tc_loss_POEA'])
+        mi_loss_POEA =  torch.Tensor(data['mi_loss_POEA'])
+        dw_kl_loss_POEA =  torch.Tensor(data['dw_kl_loss_POEA'])
+        tc_loss_POEB = torch.Tensor(data['tc_loss_POEB'])
+        mi_loss_POEB =  torch.Tensor(data['mi_loss_POEB'])
+        dw_kl_loss_POEB =  torch.Tensor(data['dw_kl_loss_POEB'])
+
+
         recons = torch.stack(
             [recon_both.detach(), recon_A.detach(), recon_B.detach()], -1
         )
@@ -1589,15 +1624,15 @@ class Solver(object):
             [kl_A.detach(), kl_B.detach(), kl_POE.detach()], -1
         )
         tc = torch.stack(
-            [tc_loss.detach()], -1
+            [tc_loss.detach(), tc_loss_A.detach(), tc_loss_B.detach(), tc_loss_POEA.detach(), tc_loss_POEB.detach()], -1
         )
 
         mi = torch.stack(
-            [mi_loss.detach()], -1
+            [mi_loss.detach(), mi_loss_A.detach(), mi_loss_B.detach(), mi_loss_POEA.detach(), mi_loss_POEB.detach()], -1
         )
 
         dw_kl = torch.stack(
-            [dw_kl_loss.detach()], -1
+            [dw_kl_loss.detach(), dw_kl_loss_A.detach(), dw_kl_loss_B.detach(), dw_kl_loss_POEA.detach(), dw_kl_loss_POEB.detach()], -1
         )
 
         acc = torch.stack(
@@ -1630,21 +1665,21 @@ class Solver(object):
             X=iters, Y=tc, env=self.name + '/lines',
             win=self.win_id['tc'], update='append',
             opts=dict(xlabel='iter', ylabel='loss',
-                      title='tc', legend=['tc']),
+                      title='tc', legend=['tc', 'tc_infA', 'tc_infB', 'tc_poeA', 'tc_poeB']),
         )
 
         self.viz.line(
             X=iters, Y=mi, env=self.name + '/lines',
             win=self.win_id['mi'], update='append',
             opts=dict(xlabel='iter', ylabel='loss',
-                      title='mi', legend=['mi']),
+                      title='mi', legend=['mi', 'mi_infA', 'mi_infB', 'mi_poeA', 'mi_poeB']),
         )
 
         self.viz.line(
             X=iters, Y=dw_kl, env=self.name + '/lines',
             win=self.win_id['dw_kl'], update='append',
             opts=dict(xlabel='iter', ylabel='loss',
-                      title='dw_kl', legend=['dw_kl']))
+                      title='dw_kl', legend=['dw_kl', 'dw_kl_infA', 'dw_kl_infB', 'dw_kl_poeA', 'dw_kl_poeB']))
     ####
     def visualize_line_metrics(self, iters, metric1, metric2):
 
