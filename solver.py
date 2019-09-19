@@ -5,17 +5,13 @@ import torch.optim as optim
 from datasets import DIGIT
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
-import matplotlib.pyplot as plt
-from torchvision import transforms
 # -----------------------------------------------------------------------------#
 from classifier import Net
 from utils import DataGather, mkdirs, grid2gif2, apply_poe, sample_gaussian, sample_gumbel_softmax, \
-    kl_multiple_discrete_loss
+    get_log_pz_qz_prodzi_qzCx
 from model import *
 from loss import kl_loss_function, reconstruction_loss
-import json
-from dataset import create_dataloader
-
+from torch.distributions.relaxed_categorical import ExpRelaxedCategorical
 
 ###############################################################################
 
@@ -72,12 +68,11 @@ class Solver(object):
         self.viz_on = args.viz_on
         if self.viz_on:
             self.win_id = dict(
-                recon='win_recon', kl='win_kl', capa='win_capa', acc='win_acc'
+                recon='win_recon', kl='win_kl', capa='win_capa', tc='win_tc', mi='win_mi', dw_kl='win_dw_kl', acc='win_acc'
             )
             self.line_gather = DataGather(
                 'iter', 'recon_both', 'recon_A', 'recon_B',
-                'kl_A', 'kl_B', 'kl_POE',
-                'cont_capacity_loss_infA', 'disc_capacity_loss_infA', 'cont_capacity_loss_infB', 'disc_capacity_loss_infB', 'disc_capacity_loss_POEA', 'disc_capacity_loss_POEB',
+                'kl_A', 'kl_B', 'kl_POE'
                 'poeA_acc', 'infA_acc', 'synA_acc',
                 'poeB_acc', 'infB_acc', 'synB_acc'
             )
@@ -167,6 +162,7 @@ class Solver(object):
             betas=[self.beta1_VAE, self.beta2_VAE]
         )
 
+
     ####
     def train(self):
 
@@ -216,53 +212,39 @@ class Solver(object):
             # zB, zS = encB(xB)
             muB_infB, stdB_infB, logvarB_infB, cate_prob_infB = self.encoderB(XB)
 
-            # read current values
-
-            # zS = encAB(xA,xB) via POE
+            '''
+            POE: should be the paramter for the distribution
+            induce zS = encAB(xA,xB) via POE, that is,
+                q(zA,zB,zS | xA,xB) := qI(zA|xA) * qT(zB|xB) * q(zS|xA,xB)
+                    where q(zS|xA,xB) \propto p(zS) * qI(zS|xA) * qT(zS|xB)
+            '''
             cate_prob_POE = torch.tensor(1 / 10) * cate_prob_infA * cate_prob_infB
-
-
-            # kl losses
-            #A
-            latent_dist_infA = {'cont': (muA_infA, logvarA_infA), 'disc': [cate_prob_infA]}
-            (kl_cont_loss_infA, kl_disc_loss_infA, cont_capacity_loss_infA, disc_capacity_loss_infA) = kl_loss_function(
-                self.use_cuda, iteration, latent_dist_infA)
-
-            loss_kl_infA = kl_cont_loss_infA + kl_disc_loss_infA
-            capacity_loss_infA = cont_capacity_loss_infA + disc_capacity_loss_infA
-
-            #B
-            latent_dist_infB = {'cont': (muB_infB, logvarB_infB), 'disc': [cate_prob_infB]}
-            (kl_cont_loss_infB, kl_disc_loss_infB, cont_capacity_loss_infB, disc_capacity_loss_infB) = kl_loss_function(
-                self.use_cuda, iteration, latent_dist_infB, cont_capacity=[0.0, 5.0, 50000, 100.0] , disc_capacity=[0.0, 10.0, 50000, 100.0])
-
-            loss_kl_infB = kl_cont_loss_infB + kl_disc_loss_infB
-            capacity_loss_infB = cont_capacity_loss_infB + disc_capacity_loss_infB
-
-            #POE
-            latent_dist_POEA = {'cont': (muA_infA, logvarA_infA), 'disc': [cate_prob_POE]}
-            (kl_cont_loss_POEA, kl_disc_loss_POEA, cont_capacity_loss_POEA, disc_capacity_loss_POEA) = kl_loss_function(
-                self.use_cuda, iteration, latent_dist_POEA)
-
-            latent_dist_POEB = {'cont': (muB_infB, logvarB_infB), 'disc': [cate_prob_POE]}
-            (kl_cont_loss_POEB, kl_disc_loss_POEB, cont_capacity_loss_POEB, disc_capacity_loss_POEB) = kl_loss_function(
-                self.use_cuda, iteration, latent_dist_POEB, cont_capacity=[0.0, 5.0, 50000, 100.0] , disc_capacity=[0.0, 10.0, 50000, 100.0])
-
-            loss_kl_POE = kl_cont_loss_POEA + kl_cont_loss_POEB + 0.5 * (kl_disc_loss_POEA + kl_disc_loss_POEB)
-            capacity_loss_POE = cont_capacity_loss_POEA + cont_capacity_loss_POEB + 0.5 * (disc_capacity_loss_POEA + disc_capacity_loss_POEB)
-
-
-
-            loss_capa = capacity_loss_infA + capacity_loss_infB + capacity_loss_POE
 
             # encoder samples (for training)
             ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
             ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
-            ZS_POE = sample_gumbel_softmax(self.use_cuda, cate_prob_POE)
 
-            # encoder samples (for cross-modal prediction)
-            ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA)
-            ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB)
+            # ZS need the distribution class to calculate the pmf value in decompositon of KL
+            Eps = 1e-12
+            # distribution
+            relaxedCategA = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infA + Eps))
+            relaxedCategB = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infB + Eps))
+            relaxedCategS = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_POE + Eps))
+
+            # sampling
+            log_ZS_infA = relaxedCategA.rsample()
+            ZS_infA = torch.exp(log_ZS_infA)
+            log_ZS_infB = relaxedCategB.rsample()
+            ZS_infB = torch.exp(log_ZS_infB)
+            log_ZS_POE = relaxedCategS.rsample()
+            ZS_POE = torch.exp(log_ZS_POE)
+            # the above sampling of ZS_infA/B are same 'way' as below
+            # ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA)
+            # ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB)
+
+
+
+            #### For all cate_prob_infA(statiscts), total 64, get log_prob_ZS_infB2 for each of ZS_infB2(sample) ==> 64*64. marig. out for q_z for MI
 
             # reconstructed samples (given joint modal observation)
             XA_POE_recon = self.decoderA(ZA_infA, ZS_POE)
@@ -272,19 +254,32 @@ class Solver(object):
             XA_infA_recon = self.decoderA(ZA_infA, ZS_infA)
             XB_infB_recon = self.decoderB(ZB_infB, ZS_infB)
 
+            # loss_recon_infA = F.l1_loss(torch.sigmoid(XA_infA_recon), XA, reduction='sum').div(XA.size(0))
             loss_recon_infA = reconstruction_loss(XA, torch.sigmoid(XA_infA_recon), distribution="bernoulli")
-
+            #
             loss_recon_infB = reconstruction_loss(XB, torch.sigmoid(XB_infB_recon), distribution="bernoulli")
-
-
+            #
             loss_recon_POE = \
-                reconstruction_loss(XA, torch.sigmoid(XA_POE_recon), distribution="bernoulli") + \
-                reconstruction_loss(XB, torch.sigmoid(XB_POE_recon), distribution="bernoulli")
+                F.l1_loss(torch.sigmoid(XA_POE_recon), XA, reduction='sum').div(XA.size(0)) + \
+                F.l1_loss(torch.sigmoid(XB_POE_recon), XB, reduction='sum').div(XB.size(0))
+            #
 
             loss_recon = loss_recon_infA + loss_recon_infB + loss_recon_POE
 
-            # total loss for vae
-            vae_loss = loss_recon + loss_capa
+            #================================== decomposed KL ========================================
+
+            loss_kl_infA = self.decomposeKL({'cont': ZA_infA, 'disc': ZS_infA}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategA})
+            loss_kl_infB = self.decomposeKL({'cont': ZB_infB, 'disc': ZS_infB}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategB})
+
+            loss_kl_POEA = self.decomposeKL({'cont': ZA_infA, 'disc': ZS_POE}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategS})
+            loss_kl_POEB = self.decomposeKL({'cont': ZB_infB, 'disc': ZS_POE}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategS})
+            loss_kl_POE = 0.5 * (loss_kl_POEA + loss_kl_POEB)
+
+            loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
+
+            ################## total loss for vae ####################
+            vae_loss = loss_recon + loss_kl
+
 
             ####### update vae ##########
             self.optim_vae.zero_grad()
@@ -297,20 +292,15 @@ class Solver(object):
             if iteration % self.print_iter == 0:
                 prn_str = ( \
                                       '[iter %d (epoch %d)] vae_loss: %.3f ' + \
-                                      '(recon: %.3f, capa: %.3f)\n' + \
+                                      '(recon: %.3f, kl: %.3f)\n' + \
                                       '    rec_infA = %.3f, rec_infB = %.3f, rec_POE = %.3f\n' + \
-                                      '    kl_infA = %.3f, kl_infB = %.3f, kl_POE = %.3f' + \
-                                      '    cont_capacity_loss_infA = %.3f, disc_capacity_loss_infA = %.3f\n' + \
-                                      '    cont_capacity_loss_infB = %.3f, disc_capacity_loss_infB = %.3f\n' + \
-                                      '    disc_capacity_loss_POEA = %.3f, disc_capacity_loss_POEB = %.3f\n'
+                                      '    kl_infA = %.3f, kl_infB = %.3f, kl_POE = %.3f'
                               ) % \
                           (iteration, epoch,
-                           vae_loss.item(), loss_recon.item(), loss_capa.item(),
+                           vae_loss.item(), loss_recon.item(), loss_kl.item(),
                            loss_recon_infA.item(), loss_recon_infB.item(), loss_recon_POE.item(),
-                           loss_kl_infA.item(), loss_kl_infB.item(), loss_kl_POE.item(),
-                           cont_capacity_loss_infA.item(), disc_capacity_loss_infA.item(),
-                           cont_capacity_loss_infB.item(), disc_capacity_loss_infB.item(),
-                           disc_capacity_loss_POEA.item(), disc_capacity_loss_POEB.item())
+                           loss_kl_infA.item(), loss_kl_infB.item(), loss_kl_POE.item()
+                           )
 
                 print(prn_str)
                 if self.record_file:
@@ -327,12 +317,12 @@ class Solver(object):
                 # self.save_embedding(iteration, index, muA_infA, muB_infB, muS_infA, muS_infB, muS_POE)
                 z_A, z_B, z_S = self.get_stat()
                 # 1) save the recon images
-                # self.save_recon(iteration)
+                self.save_recon(iteration)
 
                 # 2) save the pure-synthesis images
                 # self.save_synth_pure( iteration, howmany=100 )
                 # 3) save the cross-modal-synthesis images
-                # self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
+                self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
 
                 # 4) save the latent traversed images
                 # self.save_traverseA(iteration, z_A, z_B, z_S)
@@ -354,8 +344,7 @@ class Solver(object):
                 z_A, z_B, z_S = self.get_stat()
 
                 print(">>>>>> Train ACC")
-                (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B,
-                                                                                              train=True, howmany=3)
+                (_, _, _, _, _, _) = self.acc_total(z_A, z_B, train=True, howmany=3)
 
                 print(">>>>>> Test ACC")
                 (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B, train=False,
@@ -368,12 +357,6 @@ class Solver(object):
                                         kl_A=loss_kl_infA.item(),
                                         kl_B=loss_kl_infB.item(),
                                         kl_POE=loss_kl_POE.item(),
-                                        cont_capacity_loss_infA=cont_capacity_loss_infA.item(),
-                                        disc_capacity_loss_infA=disc_capacity_loss_infA.item(),
-                                        cont_capacity_loss_infB=cont_capacity_loss_infB.item(),
-                                        disc_capacity_loss_infB=disc_capacity_loss_infB.item(),
-                                        disc_capacity_loss_POEA=disc_capacity_loss_POEA.item(),
-                                        disc_capacity_loss_POEB=disc_capacity_loss_POEB.item(),
                                         synA_acc=synA_acc,
                                         synB_acc=synB_acc,
                                         poeA_acc=poeA_acc,
@@ -407,7 +390,19 @@ class Solver(object):
             #         self.visualize_line_metrics(iteration, metric1, metric2)
             #
 
+    def decomposeKL(self, latent_sample, latent_dist):
+        log_pz, log_qz, log_prod_qzi, log_q_zCx = get_log_pz_qz_prodzi_qzCx(latent_sample, latent_dist,
+                                                                            len(self.data_loader.dataset),
+                                                                            is_mss=self.is_mss)
 
+        # miA_loss = (log_q_zACx).mean()
+        mi_loss = (log_q_zCx - log_qz).mean()
+        # TC[z] = KL[q(z)||\prod_i z_i]
+        tc_loss = (log_qz - log_prod_qzi).sum(dim=0).div(self.batch_size)
+        # dw_kl_loss is KL[q(z)||p(z)] instead of usual KL[q(z|x)||p(z))]
+        dw_kl_loss = (log_prod_qzi - log_pz).mean()
+        kl_loss = self.beta1 * mi_loss + self.beta2 * tc_loss + self.beta3 * dw_kl_loss
+        return kl_loss
     ####
     def eval_disentangle_metric1(self):
 
@@ -1534,13 +1529,6 @@ class Solver(object):
         kl_B = torch.Tensor(data['kl_B'])
         kl_POE = torch.Tensor(data['kl_POE'])
 
-        cont_capacity_loss_infA = torch.Tensor(data['cont_capacity_loss_infA'])
-        disc_capacity_loss_infA = torch.Tensor(data['disc_capacity_loss_infA'])
-        cont_capacity_loss_infB = torch.Tensor(data['cont_capacity_loss_infB'])
-        disc_capacity_loss_infB = torch.Tensor(data['disc_capacity_loss_infB'])
-        disc_capacity_loss_POEA = torch.Tensor(data['disc_capacity_loss_POEA'])
-        disc_capacity_loss_POEB = torch.Tensor(data['disc_capacity_loss_POEB'])
-
         poeA_acc = torch.Tensor(data['poeA_acc'])
         infA_acc = torch.Tensor(data['infA_acc'])
         synA_acc = torch.Tensor(data['synA_acc'])
@@ -1554,10 +1542,6 @@ class Solver(object):
         )
         kls = torch.stack(
             [kl_A.detach(), kl_B.detach(), kl_POE.detach()], -1
-        )
-
-        each_capa = torch.stack(
-            [cont_capacity_loss_infA.detach(), disc_capacity_loss_infA.detach(), cont_capacity_loss_infB.detach(), disc_capacity_loss_infB.detach(), disc_capacity_loss_POEA.detach(), disc_capacity_loss_POEB.detach()], -1
         )
 
         acc = torch.stack(
@@ -1577,14 +1561,6 @@ class Solver(object):
             win=self.win_id['kl'], update='append',
             opts=dict(xlabel='iter', ylabel='kl losses',
                       title='KL Losses', legend=['A', 'B', 'POE']),
-        )
-
-        self.viz.line(
-            X=iters, Y=each_capa, env=self.name + '/lines',
-            win=self.win_id['capa'], update='append',
-            opts=dict(xlabel='iter', ylabel='logalpha',
-                      title='Capacity loss',
-                      legend=['cont_capaA', 'disc_capaA', 'cont_capaB', 'disc_capaB', 'disc_capaPOEA', 'disc_capaPOEB']),
         )
 
         self.viz.line(
