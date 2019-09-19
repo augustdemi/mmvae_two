@@ -363,11 +363,13 @@ class Solver(object):
                 z_A, z_B, z_S = self.get_stat()
                 # 1) save the recon images
                 self.save_recon(iteration)
+                self.save_recon(iteration, train=False)
 
                 # 2) save the pure-synthesis images
                 # self.save_synth_pure( iteration, howmany=100 )
                 # 3) save the cross-modal-synthesis images
                 self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
+                self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
 
                 # 4) save the latent traversed images
                 # self.save_traverseA(iteration, z_A, z_B, z_S)
@@ -756,12 +758,19 @@ class Solver(object):
         print('-------------------------------------------------')
         return correct / len(target)
 
-    def save_recon(self, iters):
+    def save_recon(self, iters, train=True):
         self.set_mode(train=False)
 
         mkdirs(self.output_dir_recon)
 
-        fixed_idxs = [3246, 7001, 14305, 19000, 27444, 33100, 38000, 45231, 51000, 55121]
+        if train:
+            data_loader = self.data_loader
+            fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
+            out_dir = os.path.join(self.output_dir_recon, 'train')
+        else:
+            data_loader = self.test_data_loader
+            fixed_idxs = [2, 982, 2300, 3400, 4500, 5500, 6500, 7500, 8500, 9500]
+            out_dir = os.path.join(self.output_dir_recon, 'test')
 
         fixed_idxs60 = []
         for idx in fixed_idxs:
@@ -774,7 +783,7 @@ class Solver(object):
 
         for i, idx in enumerate(fixed_idxs60):
             XA[i], XB[i], label[i] = \
-                self.data_loader.dataset.__getitem__(idx)[0:3]
+                data_loader.dataset.__getitem__(idx)[0:3]
 
             if self.use_cuda:
                 XA[i] = XA[i].cuda()
@@ -837,8 +846,8 @@ class Solver(object):
         merged = merged[perm, :].cpu()
 
         # save the results as image
-        fname = os.path.join(self.output_dir_recon, 'reconA_%s.jpg' % iters)
-        mkdirs(self.output_dir_recon)
+        fname = os.path.join(out_dir, 'reconA_%s.jpg' % iters)
+        mkdirs(out_dir)
         save_image(
             tensor=merged, filename=fname, nrow=4 * int(np.sqrt(n)),
             pad_value=1
@@ -859,8 +868,8 @@ class Solver(object):
         merged = merged[perm, :].cpu()
 
         # save the results as image
-        fname = os.path.join(self.output_dir_recon, 'reconB_%s.jpg' % iters)
-        mkdirs(self.output_dir_recon)
+        fname = os.path.join(out_dir, 'reconB_%s.jpg' % iters)
+        mkdirs(out_dir)
         save_image(
             tensor=merged, filename=fname, nrow=4 * int(np.sqrt(n)),
             pad_value=1
