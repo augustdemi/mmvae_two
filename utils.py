@@ -6,8 +6,70 @@ from torchvision import transforms
 import torch
 from torch.nn import functional as F
 import numpy as np
-
+from util_math import *
+from torch.distributions.relaxed_categorical import ExpRelaxedCategorical
 ###############################################################################
+
+
+
+def get_log_pz_qz_prodzi_qzCx(latent_sample, latent_dist, n_data, is_mss=True):
+    """
+    Calculates log densities
+
+    Parameters
+    ----------
+    latent_sample: torch.Tensor or np.ndarray or float
+        Value at which to compute the density. (batch size, latent dim)
+
+    latent_dist: torch.Tensor or np.ndarray or float
+        statisitc for dist. Each of statistics has size of (batch size, latent dim).
+        For guassian, latent_dist = (Mean, logVar)
+        For gumbel_softmax, latent_dist = alpha(prob. of categorical variable)
+    """
+    batch_size, hidden_dim = latent_sample['cont'].shape
+
+    # calculate log q(z|x)
+    log_q_ziCx_cont = log_density_gaussian(latent_sample['cont'], *(latent_dist['cont'])) #64,10
+    log_q_ziCx_disc = log_density_categorical(latent_sample['disc'], latent_dist['disc']) #64
+
+    log_q_ziCx = torch.cat((log_q_ziCx_cont, log_q_ziCx_disc.unsqueeze(-1)), dim=1) # 64,11
+    log_q_zCx = log_q_ziCx.sum(1) #64   sum across logP(z_i). i.e, \prod P(z_i | x_i)
+
+
+    # calculate log p(z)
+    zeros = torch.zeros_like(latent_sample['cont']) # mean and log var is 0
+    log_pzi_cont = log_density_gaussian(latent_sample['cont'], zeros, zeros) # sum across logP(z_i). i.e, \prod P(z_i)
+
+    unif_logits = torch.log(torch.ones_like(latent_sample['disc']) * 1 / latent_sample['disc'].shape[1])
+    relaxedCate = ExpRelaxedCategorical(torch.tensor(.67), logits=unif_logits)
+
+    log_pzi_dist = log_density_categorical(latent_sample['disc'], relaxedCate) # sum across logP(z_i). i.e, \prod P(z_i)
+
+    log_pzi = torch.cat((log_pzi_cont, log_pzi_dist.unsqueeze(-1)), dim=1)
+    log_pz = log_pzi.sum(1)
+
+    # compute log q(z) ~= log 1/(NM) sum_m=1^M q(z|x_m) = - log(MN) + logsumexp_m(q(z|x_m))
+    mat_log_qzi_cont = matrix_log_density(latent_sample['cont'], *(latent_dist['cont'])) #(256,256,10): only (n,n,10) is the result of correct pair of (latent sample, m, s).
+    # (n,n,10) --> first n = num of given samples(batch). second n = for Monte Carolo. 10 = latent dim.
+    batch_dim = 1
+    latent_sample_disc = latent_sample['disc'].unsqueeze(0).unsqueeze(batch_dim + 1).transpose(batch_dim, 0)
+    mat_log_qzi_disc = log_density_categorical(latent_sample_disc, latent_dist['disc']).transpose(1, batch_dim + 1) #(64,64,1)
+
+    mat_log_qzi = torch.cat((mat_log_qzi_cont, mat_log_qzi_disc), dim=2)
+    if is_mss:
+        # use stratification
+        log_iw_mat = log_importance_weight_matrix(batch_size, n_data).to(latent_sample.device)
+        mat_log_qzi = mat_log_qzi + log_iw_mat.view(batch_size, batch_size, 1)
+
+
+    log_qz = torch.logsumexp(mat_log_qzi.sum(2), dim=1, keepdim=False) - math.log(batch_size * n_data)
+    # mat_log_qz.sum(2): sum across logP(z_i). i.e, \prod P(z_i|x) ==> (256,256) : joint dist of zi|x = z|x
+    # logsumexp = sum across all possible pair of (m, s) for each of latent sample : from z|x -> z
+    log_prod_qzi = (torch.logsumexp(mat_log_qzi, dim=1, keepdim=False) - math.log(batch_size * n_data)).sum(1)
+    # logsumexp = sum across all possible pair of (m, s) for each of latent sample => (256,10): zi|x -> zi
+    # and then logsum across z_i => 256: \prod zi
+
+    return log_pz, log_qz, log_prod_qzi, log_q_zCx
 
 
 
