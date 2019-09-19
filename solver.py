@@ -73,6 +73,7 @@ class Solver(object):
             self.line_gather = DataGather(
                 'iter', 'recon_both', 'recon_A', 'recon_B',
                 'kl_A', 'kl_B', 'kl_POE',
+                'tc_loss', 'mi_loss', 'dw_kl_loss',
                 'poeA_acc', 'infA_acc', 'synA_acc',
                 'poeB_acc', 'infB_acc', 'synB_acc'
             )
@@ -307,7 +308,11 @@ class Solver(object):
             # loss_kl_POE
             loss_kl_POE = 0.5 * (loss_kl_POEA + loss_kl_POEB)
 
-            loss_kl = loss_kl_infA + loss_kl_infB
+            loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
+
+            tc_loss = tc_loss_A + tc_loss_B + 0.5 * (tc_loss_POEA + tc_loss_POEB)
+            mi_loss = mi_loss_A + mi_loss_B + 0.5 * (mi_loss_POEA + mi_loss_POEB)
+            dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B + 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB)
 
             ################## total loss for vae ####################
             vae_loss = loss_recon + loss_kl
@@ -389,6 +394,9 @@ class Solver(object):
                                         kl_A=loss_kl_infA.item(),
                                         kl_B=loss_kl_infB.item(),
                                         kl_POE=loss_kl_POE.item(),
+                                        tc_loss=tc_loss.item(),
+                                        mi_loss=mi_loss.item(),
+                                        dw_kl_loss=dw_kl_loss.item(),
                                         synA_acc=synA_acc,
                                         synB_acc=synB_acc,
                                         poeA_acc=poeA_acc,
@@ -1543,6 +1551,9 @@ class Solver(object):
         self.viz.close(env=self.name + '/lines', win=self.win_id['kl'])
         self.viz.close(env=self.name + '/lines', win=self.win_id['capa'])
         self.viz.close(env=self.name + '/lines', win=self.win_id['acc'])
+        self.viz.close(env=self.name + '/lines', win=self.win_id['tc'])
+        self.viz.close(env=self.name + '/lines', win=self.win_id['mi'])
+        self.viz.close(env=self.name + '/lines', win=self.win_id['dw_kl'])
 
         # if self.eval_metrics:
         #     self.viz.close(env=self.name+'/lines', win=self.win_id['metrics'])
@@ -1567,12 +1578,26 @@ class Solver(object):
         infB_acc = torch.Tensor(data['infB_acc'])
         synB_acc = torch.Tensor(data['synB_acc'])
 
+        tc_loss = torch.Tensor(data['tc_loss'])
+        mi_loss =  torch.Tensor(data['mi_loss'])
+        dw_kl_loss =  torch.Tensor(data['dw_kl_loss'])
 
         recons = torch.stack(
             [recon_both.detach(), recon_A.detach(), recon_B.detach()], -1
         )
         kls = torch.stack(
             [kl_A.detach(), kl_B.detach(), kl_POE.detach()], -1
+        )
+        tc = torch.stack(
+            [tc_loss.detach()], -1
+        )
+
+        mi = torch.stack(
+            [mi_loss.detach()], -1
+        )
+
+        dw_kl = torch.stack(
+            [dw_kl_loss.detach()], -1
         )
 
         acc = torch.stack(
@@ -1601,7 +1626,25 @@ class Solver(object):
             title = 'Classification Acc', legend = ['poeA_acc', 'infA_acc', 'synA_acc', 'poeB_acc', 'infB_acc', 'synB_acc']),
         )
 
+        self.viz.line(
+            X=iters, Y=tc, env=self.name + '/lines',
+            win=self.win_id['tc'], update='append',
+            opts=dict(xlabel='iter', ylabel='loss',
+                      title='tc', legend=['tc']),
+        )
 
+        self.viz.line(
+            X=iters, Y=mi, env=self.name + '/lines',
+            win=self.win_id['mi'], update='append',
+            opts=dict(xlabel='iter', ylabel='loss',
+                      title='mi', legend=['mi']),
+        )
+
+        self.viz.line(
+            X=iters, Y=dw_kl, env=self.name + '/lines',
+            win=self.win_id['dw_kl'], update='append',
+            opts=dict(xlabel='iter', ylabel='loss',
+                      title='dw_kl', legend=['dw_kl']))
     ####
     def visualize_line_metrics(self, iters, metric1, metric2):
 
