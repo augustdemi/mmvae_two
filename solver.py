@@ -708,8 +708,6 @@ class Solver(object):
 
     def check_acc(self, data, target, dataset='mnist', train=True):
         device = torch.device("cuda" if self.use_cuda else "cpu")
-        if self.use_cuda:
-            target = target.cuda()
         model = Net().to(device)
         print('loaded: ', dataset + "_cnn_dict.pt")
         model.load_state_dict(torch.load(dataset + "_cnn_dict.pt"))
@@ -1106,6 +1104,9 @@ class Solver(object):
         fixed_XA = torch.stack(fixed_XA)
         fixed_XB = torch.stack(fixed_XB)
         label = torch.LongTensor(label)
+
+        if self.use_cuda:
+            label = label.cuda()
 
         muA_infA, stdA_infA, logvarA_infA, cate_prob_infA = self.encoderA(fixed_XA)
         muB_infB, stdB_infB, logvarB_infB, cate_prob_infB = self.encoderB(fixed_XB)
