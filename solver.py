@@ -1150,8 +1150,8 @@ class Solver(object):
         pred_ZS_POE = torch.argmax(ZS_POE, dim=1)
 
         acc_ZS_infA = pred_ZS_infA.eq(label.view_as(pred_ZS_infA)).sum().item() / n
-        acc_ZS_infB = pred_ZS_infA.eq(label.view_as(pred_ZS_infA)).sum().item() / n
-        acc_ZS_POE = pred_ZS_infA.eq(label.view_as(pred_ZS_POE)).sum().item() / n
+        acc_ZS_infB = pred_ZS_infB.eq(label.view_as(pred_ZS_infB)).sum().item() / n
+        acc_ZS_POE = pred_ZS_POE.eq(label.view_as(pred_ZS_POE)).sum().item() / n
 
         ############################################################################
         ################### ACC for synthesized img ###################
@@ -1174,6 +1174,9 @@ class Solver(object):
         print('=========== cross-synth ACC for XB_synth ============')
         XB_synth_list = torch.stack(XB_synth_list)
         label_list = torch.LongTensor(label_list)
+        if self.use_cuda:
+            label_list = label_list.cuda()
+
         synB_acc = self.check_acc(XB_synth_list, label_list, dataset='fmnist', train=train)
 
 
