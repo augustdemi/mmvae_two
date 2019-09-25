@@ -1194,7 +1194,6 @@ class Solver(object):
             XA_synth_list.extend(XA_synth)
         print('=========== cross-synth ACC for XA_synth ============')
         XA_synth_list = torch.stack(XA_synth_list)
-        label_list = torch.LongTensor(label_list)
         synA_acc = self.check_acc(XA_synth_list, label_list, train=train)
 
         self.set_mode(train=True)
