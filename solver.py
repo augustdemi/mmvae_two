@@ -277,20 +277,20 @@ class Solver(object):
 
             #================================== decomposed KL ========================================
 
-            log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_infA}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategA},
+            log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_infA}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategA},
                                                                                 len(self.data_loader.dataset),
                                                                                 is_mss=self.is_mss)
 
 
-            log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_infB}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategB},
+            log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_infB}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategB},
                                                                                 len(self.data_loader.dataset),
                                                                                 is_mss=self.is_mss)
 
-            log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_POE}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategS},
+            log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_POE}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategS},
                                                                                 len(self.data_loader.dataset),
                                                                                 is_mss=self.is_mss)
 
-            log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_POE}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategS},
+            log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_POE}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategS},
                                                                                 len(self.data_loader.dataset),
                                                                                 is_mss=self.is_mss)
             # loss_kl_infA
@@ -362,22 +362,26 @@ class Solver(object):
                 # self.save_embedding(iteration, index, muA_infA, muB_infB, muS_infA, muS_infB, muS_POE)
                 z_A, z_B, z_S = self.get_stat()
                 # 1) save the recon images
-                self.save_recon(iteration)
-                self.save_recon(iteration, train=False)
+
 
                 # 2) save the pure-synthesis images
                 # self.save_synth_pure( iteration, howmany=100 )
                 # 3) save the cross-modal-synthesis images
-                self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
-                self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
+
 
                 # 4) save the latent traversed images
                 # self.save_traverseA(iteration, z_A, z_B, z_S)
                 # self.save_traverseB(iteration, z_A, z_B, z_S)
-                self.save_traverse(iteration, z_A, z_B, z_S)
-                self.save_traverse(iteration, z_A, z_B, z_S, train=False)
 
+                # self.save_recon(iteration)
+                # self.save_recon(iteration, train=False)
+                # self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
+                # self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
+                # self.save_traverse(iteration, z_A, z_B, z_S)
+                # self.save_traverse(iteration, z_A, z_B, z_S, train=False)
 
+                (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc, mi_zi_xA, mi_zi_xB, mi_zi_xPOEA, mi_zi_xPOEB) \
+                    = self.acc_total(z_A, z_B, train=False, howmany=3)
 
             if iteration % self.eval_metrics_iter == 0:
                 self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
@@ -390,12 +394,12 @@ class Solver(object):
             if self.viz_on and (iteration % self.viz_ll_iter == 0):
                 z_A, z_B, z_S = self.get_stat()
 
-                print(">>>>>> Train ACC")
-                (_, _, _, _, _, _) = self.acc_total(z_A, z_B, train=True, howmany=3)
+                # print(">>>>>> Train ACC")
+                # (_, _, _, _, _, _) = self.acc_total(z_A, z_B, train=True, howmany=3)
 
                 print(">>>>>> Test ACC")
-                (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc) = self.acc_total(z_A, z_B, train=False,
-                                                                                              howmany=3)
+                (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc, mi_zi_xA, mi_zi_xB, mi_zi_xPOEA, mi_zi_xPOEB) \
+                    = self.acc_total(z_A, z_B, train=False, howmany=3)
 
                 self.line_gather.insert(iter=iteration,
                                         recon_both=loss_recon_POE.item(),
@@ -453,19 +457,6 @@ class Solver(object):
             #         self.visualize_line_metrics(iteration, metric1, metric2)
             #
 
-    def decomposeKL(self, latent_sample, latent_dist):
-        log_pz, log_qz, log_prod_qzi, log_q_zCx = get_log_pz_qz_prodzi_qzCx(latent_sample, latent_dist,
-                                                                            len(self.data_loader.dataset),
-                                                                            is_mss=self.is_mss)
-
-        # miA_loss = (log_q_zACx).mean()
-        mi_loss = (log_q_zCx - log_qz).mean()
-        # TC[z] = KL[q(z)||\prod_i z_i]
-        tc_loss = (log_qz - log_prod_qzi).sum(dim=0).div(self.batch_size)
-        # dw_kl_loss is KL[q(z)||p(z)] instead of usual KL[q(z|x)||p(z))]
-        dw_kl_loss = (log_prod_qzi - log_pz).mean()
-        kl_loss = self.beta1 * mi_loss + self.beta2 * tc_loss + self.beta3 * dw_kl_loss
-        return kl_loss
     ####
     def eval_disentangle_metric1(self):
 
@@ -1079,21 +1070,22 @@ class Solver(object):
 
         if train:
             data_loader = self.data_loader
-            fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
+            fixed_idxs = [0, 5923, 11881, 17881, 23723, 29144, 35062, 41062, 46913, 52862]
         else:
             data_loader = self.test_data_loader
-            fixed_idxs = [2, 982, 2300, 3400, 4500, 5500, 6500, 7500, 8500, 9500]
+            fixed_idxs = [0, 980, 1980, 2980, 3962, 4854, 5812, 6812, 7786, 8786]
+
 
         # increase into 20 times more data
-        fixed_idxs200 = []
+        fixed_idxs1000 = []
         for i in range(10):
-            for j in range(20):
-                fixed_idxs200.append(fixed_idxs[i] + i)
-        fixed_XA = [0] * len(fixed_idxs200)
-        fixed_XB = [0] * len(fixed_idxs200)
-        label = [0] * len(fixed_idxs200)
+            for j in range(100):
+                fixed_idxs1000.append(fixed_idxs[i] + i)
+        fixed_XA = [0] * len(fixed_idxs1000)
+        fixed_XB = [0] * len(fixed_idxs1000)
+        label = [0] * len(fixed_idxs1000)
 
-        for i, idx in enumerate(fixed_idxs200):
+        for i, idx in enumerate(fixed_idxs1000):
             fixed_XA[i], fixed_XB[i], label[i] = \
                 data_loader.dataset.__getitem__(idx)[0:3]
             if self.use_cuda:
@@ -1125,9 +1117,24 @@ class Solver(object):
 
 
         # encoder samples (for cross-modal prediction)
-        ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA, train=False)
-        ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB, train=False)
-        ZS_POE = sample_gumbel_softmax(self.use_cuda, cate_prob_POE, train=False)
+
+        Eps = 1e-12
+        # distribution
+        relaxedCategA = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infA + Eps))
+        relaxedCategB = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infB + Eps))
+        relaxedCategS = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_POE + Eps))
+
+        # sampling
+        log_ZS_infA = relaxedCategA.rsample()
+        ZS_infA = torch.exp(log_ZS_infA)
+        log_ZS_infB = relaxedCategB.rsample()
+        ZS_infB = torch.exp(log_ZS_infB)
+        log_ZS_POE = relaxedCategS.rsample()
+        ZS_POE = torch.exp(log_ZS_POE)
+        # the above sampling of ZS_infA/B are same 'way' as below
+        ZS_infA2 = sample_gumbel_softmax(self.use_cuda, cate_prob_infA, train=False)
+        # ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB)
+
 
         # reconstructed samples (given joint modal observation)
         XA_POE_recon = torch.sigmoid(self.decoderA(ZA_infA, ZS_POE))
@@ -1147,8 +1154,32 @@ class Solver(object):
         print('InfB')
         infB_acc = self.check_acc(XB_infB_recon, label, dataset='fmnist', train=train)
 
-        ################### ACC for synthesized img
-        n = len(fixed_idxs200)
+        print('=========== Reconstructed MI  ============')
+        log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A, mi_zi_xA = get_log_pz_qz_prodzi_qzCx(
+            {'cont': ZA_infA, 'disc': ZS_infA}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategA},
+            len(self.data_loader.dataset),
+            is_mss=self.is_mss)
+
+        log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B, mi_zi_xB = get_log_pz_qz_prodzi_qzCx(
+            {'cont': ZB_infB, 'disc': ZS_infB}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategB},
+            len(self.data_loader.dataset),
+            is_mss=self.is_mss)
+
+        log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA, mi_zi_xPOEA = get_log_pz_qz_prodzi_qzCx(
+            {'cont': ZA_infA, 'disc': ZS_POE}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategS},
+            len(self.data_loader.dataset),
+            is_mss=self.is_mss)
+
+        log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB, mi_zi_xPOEB = get_log_pz_qz_prodzi_qzCx(
+            {'cont': ZB_infB, 'disc': ZS_POE}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategS},
+            len(self.data_loader.dataset),
+            is_mss=self.is_mss)
+        # loss_kl_infA
+
+        ############################################################################
+        ################### ACC for synthesized img ###################
+        ############################################################################
+        n = len(fixed_idxs1000)
         ######## 1) generate xB from given xA (A2B) ########
         XB_synth_list = []
         label_list = []
@@ -1187,7 +1218,7 @@ class Solver(object):
         synA_acc = self.check_acc(XA_synth_list, label_list, train=train)
 
         self.set_mode(train=True)
-        return (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc)
+        return (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc, mi_zi_xA, mi_zi_xB, mi_zi_xPOEA, mi_zi_xPOEB)
 
     def get_stat(self):
         encoderA = self.encoderA
