@@ -43,9 +43,9 @@ def get_log_pz_qz_prodzi_qzCx(latent_sample, latent_dist, n_data, is_mss=True):
     unif_logits = torch.log(torch.ones_like(latent_sample['disc']) * 1 / latent_sample['disc'].shape[1])
     relaxedCate = ExpRelaxedCategorical(torch.tensor(.67), logits=unif_logits)
 
-    log_pzi_dist = log_density_categorical(latent_sample['disc'], relaxedCate) # sum across logP(z_i). i.e, \prod P(z_i)
+    log_pzi_disc = log_density_categorical(latent_sample['disc'], relaxedCate) # sum across logP(z_i). i.e, \prod P(z_i)
 
-    log_pzi = torch.cat((log_pzi_cont, log_pzi_dist.unsqueeze(-1)), dim=1)
+    log_pzi = torch.cat((log_pzi_cont, log_pzi_disc.unsqueeze(-1)), dim=1)
     log_pz = log_pzi.sum(1)
 
     # compute log q(z) ~= log 1/(NM) sum_m=1^M q(z|x_m) = - log(MN) + logsumexp_m(q(z|x_m))
@@ -65,11 +65,14 @@ def get_log_pz_qz_prodzi_qzCx(latent_sample, latent_dist, n_data, is_mss=True):
     log_qz = torch.logsumexp(mat_log_qzi.sum(2), dim=1, keepdim=False) - math.log(batch_size * n_data)
     # mat_log_qz.sum(2): sum across logP(z_i). i.e, \prod P(z_i|x) ==> (256,256) : joint dist of zi|x = z|x
     # logsumexp = sum across all possible pair of (m, s) for each of latent sample : from z|x -> z
-    log_prod_qzi = (torch.logsumexp(mat_log_qzi, dim=1, keepdim=False) - math.log(batch_size * n_data)).sum(1)
+    log_qzi = torch.logsumexp(mat_log_qzi, dim=1, keepdim=False) - math.log(batch_size * n_data)
+    log_prod_qzi = log_qzi.sum(1)
+    mi_zi_x = (log_q_ziCx - log_qzi).sum(dim=0) / batch_size
+
     # logsumexp = sum across all possible pair of (m, s) for each of latent sample => (256,10): zi|x -> zi
     # and then logsum across z_i => 256: \prod zi
 
-    return log_pz, log_qz, log_prod_qzi, log_q_zCx
+    return log_pz, log_qz, log_prod_qzi, log_q_zCx, mi_zi_x
 
 
 
