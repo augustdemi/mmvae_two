@@ -1709,9 +1709,9 @@ class Solver(object):
             opts=dict(xlabel='iter', ylabel='loss',
                       title='dw_kl', legend=['dw_kl', 'dw_kl_infA', 'dw_kl_infB', 'dw_kl_poeA', 'dw_kl_poeB']))
         self.viz.line(
-            X=iters, Y=acc, env=self.name + '/lines',
+            X=iters, Y=disc_latent_acc, env=self.name + '/lines',
             win=self.win_id['disc_latent_acc'], update='append',
-            opts=dict(xlabel='iter', ylabel='accuracy',
+            opts=dict(xlabel='iter', ylabel='disc_latent_acc',
             title = 'Discrete latent Acc', legend = ['acc_ZS_infA', 'acc_ZS_infB', 'acc_ZS_POE']),
         )
     ####
