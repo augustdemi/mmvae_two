@@ -72,7 +72,7 @@ class Solver(object):
         self.viz_on = args.viz_on
         if self.viz_on:
             self.win_id = dict(
-                recon='win_recon', kl='win_kl', capa='win_capa', acc='win_acc'
+                recon='win_recon', kl='win_kl', capa='win_capa', acc='win_acc', disc_latent_acc='disc_latent_acc'
             )
             self.line_gather = DataGather(
                 'iter', 'recon_both', 'recon_A', 'recon_B',
