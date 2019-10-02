@@ -82,8 +82,8 @@ class Position(Dataset):
             within_class_index = index - sum[label-1]
         else:
             within_class_index = index
-        a_idx = int( (within_class_index + 1) / len(self.class_idxB[label]))
-        b_idx =  (within_class_index + 1) % len(self.class_idxB[label]) - 1
+        a_idx = int(within_class_index / len(self.class_idxB[label]))
+        b_idx =  within_class_index % len(self.class_idxB[label])
         a_idx = self.class_idxA[label][a_idx]
         b_idx = self.class_idxB[label][b_idx]
         return a_idx, b_idx
