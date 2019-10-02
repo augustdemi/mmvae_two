@@ -202,3 +202,112 @@ class DecoderA(nn.Module):
 # -----------------------------------------------------------------
 
 
+
+class EncoderSingle3(nn.Module):
+    '''
+    single modal encoder architecture for the "3df" data
+    '''
+
+    ####
+    def __init__(self, zPrivate_dim=3, zShared_dim=5):
+
+        super(EncoderSingle3, self).__init__()
+
+        self.zP_dim = zPrivate_dim
+        self.zS_dim = zShared_dim
+
+        self.conv1 = nn.Conv2d(1, 32, 4, 2, 1)
+        self.conv2 = nn.Conv2d(32, 32, 4, 2, 1)
+        self.conv3 = nn.Conv2d(32, 64, 4, 2, 1)
+        self.conv4 = nn.Conv2d(64, 64, 4, 2, 1)
+        self.fc5 = nn.Linear(64 * 4 * 4, 256)
+        self.fc6 = nn.Linear(256, 2 * zPrivate_dim + 2 * zShared_dim)
+
+        # initialize parameters
+        self.weight_init()
+
+    ####
+    def weight_init(self, mode='normal'):
+
+        if mode == 'kaiming':
+            initializer = kaiming_init
+        elif mode == 'normal':
+            initializer = normal_init
+
+        for m in self._modules:
+            initializer(self._modules[m])
+
+    ####
+    def forward(self, x):
+
+        out = F.relu(self.conv1(x))
+        out = F.relu(self.conv2(out))
+        out = F.relu(self.conv3(out))
+        out = F.relu(self.conv4(out))
+        out = out.view(out.size(0), -1)
+        out = F.relu(self.fc5(out))
+        stats = self.fc6(out)
+
+        muPrivate = stats[:, :self.zP_dim]
+        logvarPrivate = stats[:, self.zP_dim:(2 * self.zP_dim)]
+        stdPrivate = torch.sqrt(torch.exp(logvarPrivate))
+
+        muShared = stats[:, (2 * self.zP_dim):(2 * self.zP_dim + self.zS_dim)]
+        logvarShared = stats[:, (2 * self.zP_dim + self.zS_dim):]
+        stdShared = torch.sqrt(torch.exp(logvarShared))
+
+        return (muPrivate, stdPrivate, logvarPrivate,
+                muShared, stdShared, logvarShared)
+
+
+# -----------------------------------------------------------------------------#
+
+class DecoderSingle3(nn.Module):
+    '''
+    single modal decoder architecture for the "3df" data
+    '''
+
+    ####
+    def __init__(self, zPrivate_dim=3, zShared_dim=5):
+
+        super(DecoderSingle3, self).__init__()
+
+        self.zP_dim = zPrivate_dim
+        self.zS_dim = zShared_dim
+
+        self.fc1 = nn.Linear(zPrivate_dim + zShared_dim, 256)
+        self.fc2 = nn.Linear(256, 4 * 4 * 64)
+        self.deconv3 = nn.ConvTranspose2d(64, 64, 4, 2, 1)
+        self.deconv4 = nn.ConvTranspose2d(64, 32, 4, 2, 1)
+        self.deconv5 = nn.ConvTranspose2d(32, 32, 4, 2, 1)
+        self.deconv6 = nn.ConvTranspose2d(32, 1, 4, 2, 1)
+
+        # initialize parameters
+        self.weight_init()
+
+    ####
+    def weight_init(self, mode='normal'):
+
+        if mode == 'kaiming':
+            initializer = kaiming_init
+        elif mode == 'normal':
+            initializer = normal_init
+
+        for m in self._modules:
+            initializer(self._modules[m])
+
+    ####
+    def forward(self, zPrivate, zShared):
+
+        z = torch.cat((zPrivate, zShared), 1)
+
+        out = F.relu(self.fc1(z))
+        out = F.relu(self.fc2(out))
+        out = out.view(out.size(0), 64, 4, 4)
+        out = F.relu(self.deconv3(out))
+        out = F.relu(self.deconv4(out))
+        out = F.relu(self.deconv5(out))
+        x_recon = self.deconv6(out)
+
+        return x_recon
+

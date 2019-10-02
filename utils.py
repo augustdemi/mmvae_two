@@ -12,7 +12,95 @@ from torch.distributions.relaxed_categorical import ExpRelaxedCategorical
 
 
 
-def get_log_pz_qz_prodzi_qzCx(latent_sample, latent_dist, n_data, is_mss=True):
+def get_log_pz_qz_prodzi_qzCx(latent_sample, latent_dist, n_data, is_mss=True, mi=False):
+    """
+    Calculates log densities
+
+    Parameters
+    ----------
+    latent_sample: torch.Tensor or np.ndarray or float
+        Value at which to compute the density. (batch size, latent dim)
+
+    latent_dist: torch.Tensor or np.ndarray or float
+        statisitc for dist. Each of statistics has size of (batch size, latent dim).
+        For guassian, latent_dist = (Mean, logVar)
+        For gumbel_softmax, latent_dist = alpha(prob. of categorical variable)
+    """
+    batch_size, hidden_dim = latent_sample['cont'].shape
+
+    # calculate log q(z|x)
+    log_q_ziCx_cont = log_density_gaussian(latent_sample['cont'], *(latent_dist['cont'])) #64,10
+    if 'disc' in latent_sample.keys():
+        log_q_ziCx_disc = log_density_categorical(latent_sample['disc'], latent_dist['disc']) #64
+        log_q_ziCx = torch.cat((log_q_ziCx_cont, log_q_ziCx_disc.unsqueeze(-1)), dim=1) # 64,11
+    else:
+        log_q_ziCx = log_q_ziCx_cont
+    log_q_zCx = log_q_ziCx.sum(1) #64   sum across logP(z_i). i.e, \prod P(z_i | x_i)
+
+
+    # calculate log p(z)
+    zeros = torch.zeros_like(latent_sample['cont']) # mean and log var is 0
+    log_pzi_cont = log_density_gaussian(latent_sample['cont'], zeros, zeros) # sum across logP(z_i). i.e, \prod P(z_i)
+    if 'disc' in latent_sample.keys():
+        unif_logits = torch.log(torch.ones_like(latent_sample['disc']) * 1 / latent_sample['disc'].shape[1])
+        relaxedCate = ExpRelaxedCategorical(torch.tensor(.67), logits=unif_logits)
+        log_pzi_disc = log_density_categorical(latent_sample['disc'], relaxedCate) # sum across logP(z_i). i.e, \prod P(z_i)
+        log_pzi = torch.cat((log_pzi_cont, log_pzi_disc.unsqueeze(-1)), dim=1)
+    else:
+        log_pzi = log_pzi_cont
+    log_pz = log_pzi.sum(1)
+
+    # compute log q(z) ~= log 1/(NM) sum_m=1^M q(z|x_m) = - log(MN) + logsumexp_m(q(z|x_m))
+    mat_log_qzi_cont = matrix_log_density(latent_sample['cont'], *(latent_dist['cont'])) #(256,256,10): only (n,n,10) is the result of correct pair of (latent sample, m, s).
+    # (n,n,10) --> first n = num of given samples(batch). second n = for Monte Carolo. 10 = latent dim.
+
+    if 'disc' in latent_sample.keys():
+        batch_dim = 1
+        latent_sample_disc = latent_sample['disc'].unsqueeze(0).unsqueeze(batch_dim + 1).transpose(batch_dim, 0)
+        mat_log_qzi_disc = log_density_categorical(latent_sample_disc, latent_dist['disc']).transpose(1, batch_dim + 1) #(64,64,1)
+        mat_log_qzi = torch.cat((mat_log_qzi_cont, mat_log_qzi_disc), dim=2)
+    else:
+        mat_log_qzi = mat_log_qzi_cont
+
+    if is_mss:
+        # use stratification
+        log_iw_mat = log_importance_weight_matrix(batch_size, n_data).to(latent_sample.device)
+        mat_log_qzi = mat_log_qzi + log_iw_mat.view(batch_size, batch_size, 1)
+
+
+    log_qz = torch.logsumexp(mat_log_qzi.sum(2), dim=1, keepdim=False) - math.log(batch_size * n_data)
+    # mat_log_qz.sum(2): sum across logP(z_i). i.e, \prod P(z_i|x) ==> (256,256) : joint dist of zi|x = z|x
+    # logsumexp = sum across all possible pair of (m, s) for each of latent sample : from z|x -> z
+    log_qzi = torch.logsumexp(mat_log_qzi, dim=1, keepdim=False) - math.log(batch_size * n_data)
+    log_prod_qzi = log_qzi.sum(1)
+    mi_zi_x = (log_q_ziCx - log_qzi).sum(dim=0) / batch_size
+
+    # logsumexp = sum across all possible pair of (m, s) for each of latent sample => (256,10): zi|x -> zi
+    # and then logsum across z_i => 256: \prod zi
+    #############
+    #q(z=l|x,y=k)
+    mi_zi_y = torch.tensor([.0] * 11)
+    if mi:
+
+
+        # first = mat_qzi.sum(1) * np.log(1000)
+        # second = (mat_qzi * mat_log_qzi).sum(1)
+        # third = 10 * np.log(100)
+        # fourth = 10 * log_qzi
+        # mi_zi_y = ((first + second - third - fourth) / 1000).sum(0) / batch_size
+        for k in range(10):
+            # mat_log_qzi_cont = matrix_log_density(latent_sample['cont'][k*100:(k+1)*100], *(latent_dist['cont']))
+            # mat_log_qzi_disc = log_density_categorical(latent_sample_disc[k*100:(k+1)*100], latent_dist['disc']).transpose(1, batch_dim + 1)
+            mat_log_qzi_k = torch.cat((mat_log_qzi_cont[k*100:(k+1)*100, k*100:(k+1)*100, :], mat_log_qzi_disc[k*100:(k+1)*100, k*100:(k+1)*100, :]), dim=2)
+            mat_qzi = torch.exp(mat_log_qzi_k)
+            star = mat_qzi.sum(1).mean(0)
+            mi_zi_y += (star * (np.log(10) + torch.log(star) - log_qzi.mean(0)))
+        mi_zi_y = mi_zi_y / batch_size
+    #############
+
+    return log_pz, log_qz, log_prod_qzi, log_q_zCx, mi_zi_y
+
+def get_log_pz_qz_prodzi_qzCx_label(latent_sample, latent_dist, n_data, is_mss=True):
     """
     Calculates log densities
 
@@ -67,13 +155,19 @@ def get_log_pz_qz_prodzi_qzCx(latent_sample, latent_dist, n_data, is_mss=True):
     # logsumexp = sum across all possible pair of (m, s) for each of latent sample : from z|x -> z
     log_qzi = torch.logsumexp(mat_log_qzi, dim=1, keepdim=False) - math.log(batch_size * n_data)
     log_prod_qzi = log_qzi.sum(1)
-    mi_zi_x = (log_q_ziCx - log_qzi).sum(dim=0) / batch_size
+    mi_zi_x = (log_q_ziCx - log_qzi).sum(dim=0)
 
-    # logsumexp = sum across all possible pair of (m, s) for each of latent sample => (256,10): zi|x -> zi
-    # and then logsum across z_i => 256: \prod zi
+    #############
+    #q(z=l|x,y=k)
+    mat_qzi = torch.exp(mat_log_qzi)
+    first = mat_qzi.sum(2) * np.log(1000) / 1000
+    second = (mat_qzi * mat_log_qzi).sum(2) /1000
+    third = 11*10*torch.log(100)
+    fourth = 10*log_prod_qzi
+    mi_zi_y = first + second - third - fourth
+    #############
 
     return log_pz, log_qz, log_prod_qzi, log_q_zCx, mi_zi_x
-
 
 
 def _traverse_discrete_line(dim, size):
@@ -150,9 +244,7 @@ def _kl_discrete_loss(use_cuda, alpha):
     return kl_loss
 
 
-
-
-def apply_poe(use_cuda, muS_infA, logvarS_infA, muS_infB, logvarS_infB, logalpha, logalphaA, logalphaB):
+def apply_poe(use_cuda, muS_infA, logvarS_infA, muS_infB, logvarS_infB):
     '''
     induce zS = encAB(xA,xB) via POE, that is,
         q(zI,zT,zS|xI,xT) := qI(zI|xI) * qT(zT|xT) * q(zS|xI,xT)
@@ -163,10 +255,8 @@ def apply_poe(use_cuda, muS_infA, logvarS_infA, muS_infB, logvarS_infB, logalpha
     if use_cuda:
         ZERO = ZERO.cuda()
 
-    aa=((ZERO - logalpha), -(logvarS_infA - logalphaA), -(logvarS_infB - logalphaB))
-    bb= torch.stack(((ZERO - logalpha), -(logvarS_infA - logalphaA), -(logvarS_infB - logalphaB)), dim=2)
     logvarS = -torch.logsumexp(
-        torch.stack(((ZERO - logalpha), -(logvarS_infA - logalphaA), -(logvarS_infB - logalphaB)), dim=2),
+        torch.stack((ZERO, -logvarS_infA, -logvarS_infB), dim=2),
         dim=2
     )
     stdS = torch.sqrt(torch.exp(logvarS))
@@ -174,6 +264,27 @@ def apply_poe(use_cuda, muS_infA, logvarS_infA, muS_infB, logvarS_infB, logalpha
            muS_infB / torch.exp(logvarS_infB)) * (stdS ** 2)
 
     return muS, stdS, logvarS
+
+# def apply_poe(use_cuda, muS_infA, logvarS_infA, muS_infB, logvarS_infB, logalpha, logalphaA, logalphaB):
+#     '''
+#     induce zS = encAB(xA,xB) via POE, that is,
+#         q(zI,zT,zS|xI,xT) := qI(zI|xI) * qT(zT|xT) * q(zS|xI,xT)
+#             where q(zS|xI,xT) \propto p(zS) * qI(zS|xI) * qT(zS|xT)
+#     '''
+#
+#     ZERO = torch.zeros(logvarS_infA.shape)
+#     if use_cuda:
+#         ZERO = ZERO.cuda()
+#
+#     logvarS = -torch.logsumexp(
+#         torch.stack(((ZERO - logalpha), -(logvarS_infA - logalphaA), -(logvarS_infB - logalphaB)), dim=2),
+#         dim=2
+#     )
+#     stdS = torch.sqrt(torch.exp(logvarS))
+#     muS = (muS_infA / torch.exp(logvarS_infA) +
+#            muS_infB / torch.exp(logvarS_infB)) * (stdS ** 2)
+#
+#     return muS, stdS, logvarS
 
 #-----------------------------------------------------------------------------#
 

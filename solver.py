@@ -2,7 +2,7 @@ import os
 import numpy as np
 
 import torch.optim as optim
-from datasets import DIGIT
+from dataset_cont import Position
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 # -----------------------------------------------------------------------------#
@@ -41,6 +41,7 @@ class Solver(object):
         self.dset_dir = args.dset_dir
         self.dataset = args.dataset
         self.nc = 3
+        self.categ = args.categ
 
         # self.N = self.latent_values.shape[0]
         self.eval_metrics_iter = args.eval_metrics_iter
@@ -138,10 +139,16 @@ class Solver(object):
         self.n_data = args.n_data
 
         if self.ckpt_load_iter == 0:  # create a new model
-            self.encoderA = EncoderA(self.zA_dim, self.zS_dim)
-            self.encoderB = EncoderA(self.zB_dim, self.zS_dim)
-            self.decoderA = DecoderA(self.zA_dim, self.zS_dim)
-            self.decoderB = DecoderA(self.zB_dim, self.zS_dim)
+            self.encoderA = EncoderSingle3(self.zA_dim, self.zS_dim)
+            self.encoderB = EncoderSingle3(self.zB_dim, self.zS_dim)
+            self.decoderA = DecoderSingle3(self.zA_dim, self.zS_dim)
+            self.decoderB = DecoderSingle3(self.zB_dim, self.zS_dim)
+
+            # self.encoderA = EncoderA(self.zA_dim, self.zS_dim)
+            # self.encoderB = EncoderA(self.zB_dim, self.zS_dim)
+            # self.decoderA = DecoderA(self.zA_dim, self.zS_dim)
+            # self.decoderB = DecoderA(self.zB_dim, self.zS_dim)
+
 
         else:  # load a previously saved model
 
@@ -180,9 +187,9 @@ class Solver(object):
 
         # prepare dataloader (iterable)
         print('Start loading data...')
-        dset = DIGIT('./data', train=True)
+        dset = Position('./data', train=True)
         self.data_loader = torch.utils.data.DataLoader(dset, batch_size=self.batch_size, shuffle=True)
-        test_dset = DIGIT('./data', train=False)
+        test_dset = Position('./data', train=False)
         self.test_data_loader = torch.utils.data.DataLoader(test_dset, batch_size=self.batch_size, shuffle=True)
         print('test: ', len(test_dset))
         self.N = len(self.data_loader.dataset)
@@ -217,42 +224,61 @@ class Solver(object):
                 XB = XB.cuda()
 
             # zA, zS = encA(xA)
-            muA_infA, stdA_infA, logvarA_infA, cate_prob_infA = self.encoderA(XA)
+            if self.categ:
+                muA_infA, stdA_infA, logvarA_infA, cate_prob_infA = self.encoderA(XA)
+                # zB, zS = encB(xB)
+                muB_infB, stdB_infB, logvarB_infB, cate_prob_infB = self.encoderB(XB)
 
-            # zB, zS = encB(xB)
-            muB_infB, stdB_infB, logvarB_infB, cate_prob_infB = self.encoderB(XB)
+                '''
+                POE: should be the paramter for the distribution
+                induce zS = encAB(xA,xB) via POE, that is,
+                    q(zA,zB,zS | xA,xB) := qI(zA|xA) * qT(zB|xB) * q(zS|xA,xB)
+                        where q(zS|xA,xB) \propto p(zS) * qI(zS|xA) * qT(zS|xB)
+                '''
+                cate_prob_POE = torch.tensor(1 / 10) * cate_prob_infA * cate_prob_infB
 
-            '''
-            POE: should be the paramter for the distribution
-            induce zS = encAB(xA,xB) via POE, that is,
-                q(zA,zB,zS | xA,xB) := qI(zA|xA) * qT(zB|xB) * q(zS|xA,xB)
-                    where q(zS|xA,xB) \propto p(zS) * qI(zS|xA) * qT(zS|xB)
-            '''
-            cate_prob_POE = torch.tensor(1 / 10) * cate_prob_infA * cate_prob_infB
+                # encoder samples (for training)
+                ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
+                ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
 
-            # encoder samples (for training)
-            ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
-            ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
+                # ZS need the distribution class to calculate the pmf value in decompositon of KL
+                Eps = 1e-12
+                # distribution
+                relaxedCategA = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infA + Eps))
+                relaxedCategB = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infB + Eps))
+                relaxedCategS = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_POE + Eps))
 
-            # ZS need the distribution class to calculate the pmf value in decompositon of KL
-            Eps = 1e-12
-            # distribution
-            relaxedCategA = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infA + Eps))
-            relaxedCategB = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infB + Eps))
-            relaxedCategS = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_POE + Eps))
+                # sampling
+                log_ZS_infA = relaxedCategA.rsample()
+                ZS_infA = torch.exp(log_ZS_infA)
+                log_ZS_infB = relaxedCategB.rsample()
+                ZS_infB = torch.exp(log_ZS_infB)
+                log_ZS_POE = relaxedCategS.rsample()
+                ZS_POE = torch.exp(log_ZS_POE)
+                # the above sampling of ZS_infA/B are same 'way' as below
+                # ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA)
+                # ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB)
 
-            # sampling
-            log_ZS_infA = relaxedCategA.rsample()
-            ZS_infA = torch.exp(log_ZS_infA)
-            log_ZS_infB = relaxedCategB.rsample()
-            ZS_infB = torch.exp(log_ZS_infB)
-            log_ZS_POE = relaxedCategS.rsample()
-            ZS_POE = torch.exp(log_ZS_POE)
-            # the above sampling of ZS_infA/B are same 'way' as below
-            # ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA)
-            # ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB)
+            else:
+                muA_infA, stdA_infA, logvarA_infA, \
+                muS_infA, stdS_infA, logvarS_infA = self.encoderA(XA)
 
+                # zB, zS = encB(xB)
+                muB_infB, stdB_infB, logvarB_infB, \
+                muS_infB, stdS_infB, logvarS_infB = self.encoderB(XB)
 
+                # zS = encAB(xA,xB) via POE
+                muS_POE, stdS_POE, logvarS_POE = apply_poe(
+                    self.use_cuda, muS_infA, logvarS_infA, muS_infB, logvarS_infB,
+                )
+
+                # encoder samples (for training)
+                ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
+                ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
+                ZS_POE  = sample_gaussian(self.use_cuda, muS_POE, stdS_POE)
+                # encoder samples (for cross-modal prediction)
+                ZS_infA = sample_gaussian(self.use_cuda, muS_infA, stdS_infA)
+                ZS_infB = sample_gaussian(self.use_cuda, muS_infB, stdS_infB)
 
             #### For all cate_prob_infA(statiscts), total 64, get log_prob_ZS_infB2 for each of ZS_infB2(sample) ==> 64*64. marig. out for q_z for MI
 
@@ -277,22 +303,43 @@ class Solver(object):
 
             #================================== decomposed KL ========================================
 
-            log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_infA}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategA},
-                                                                                len(self.data_loader.dataset),
-                                                                                is_mss=self.is_mss)
+            if self.categ:
+                log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_infA}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategA},
+                                                                                    len(self.data_loader.dataset),
+                                                                                    is_mss=self.is_mss)
 
 
-            log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_infB}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategB},
-                                                                                len(self.data_loader.dataset),
-                                                                                is_mss=self.is_mss)
+                log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_infB}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategB},
+                                                                                    len(self.data_loader.dataset),
+                                                                                    is_mss=self.is_mss)
 
-            log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_POE}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategS},
-                                                                                len(self.data_loader.dataset),
-                                                                                is_mss=self.is_mss)
+                log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_POE}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategS},
+                                                                                    len(self.data_loader.dataset),
+                                                                                    is_mss=self.is_mss)
 
-            log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_POE}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategS},
-                                                                                len(self.data_loader.dataset),
-                                                                                is_mss=self.is_mss)
+                log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_POE}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategS},
+                                                                                    len(self.data_loader.dataset),
+                                                                                    is_mss=self.is_mss)
+            else:
+                log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A, _ = get_log_pz_qz_prodzi_qzCx(
+                    {'cont':  torch.cat((ZA_infA, ZS_infA), dim=1)}, {'cont': (torch.cat((muA_infA, muS_infA), dim=1),  torch.cat((logvarA_infA, logvarS_infA), dim=1))},
+                    len(self.data_loader.dataset),
+                    is_mss=self.is_mss)
+
+                log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B, _ = get_log_pz_qz_prodzi_qzCx(
+                    {'cont': torch.cat((ZB_infB, ZS_infB), dim=1)}, {'cont': (torch.cat((muB_infB, muS_infB), dim=1), torch.cat((logvarB_infB, logvarS_infB), dim=1))},
+                    len(self.data_loader.dataset),
+                    is_mss=self.is_mss)
+
+                log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA, _ = get_log_pz_qz_prodzi_qzCx(
+                    {'cont': torch.cat((ZA_infA, ZS_POE), dim=1)}, {'cont': (torch.cat((muA_infA, muS_POE), dim=1), torch.cat((logvarA_infA, logvarS_POE), dim=1))},
+                    len(self.data_loader.dataset),
+                    is_mss=self.is_mss)
+
+                log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB, _ = get_log_pz_qz_prodzi_qzCx(
+                    {'cont': torch.cat((ZB_infB, ZS_POE), dim=1)}, {'cont': (torch.cat((muB_infB, muS_POE), dim=1), torch.cat((logvarB_infB, logvarS_POE), dim=1))},
+                    len(self.data_loader.dataset),
+                    is_mss=self.is_mss)
             # loss_kl_infA
             mi_loss_A = (log_q_zCx_A - log_qz_A).mean()
             tc_loss_A = (log_qz_A - log_prod_qzi_A).sum(dim=0).div(self.batch_size)

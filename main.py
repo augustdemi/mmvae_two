@@ -108,6 +108,8 @@ def create_parser():
       help='dataset name' )
     parser.add_argument( '--num_workers', default=2, type=int, 
       help='dataloader num_workers' )
+    parser.add_argument( '--categ', default=False, type=str2bool,
+      help='if shared factor is categorical or not' )
     
     # iter# for previously saved model
     parser.add_argument( '--ckpt_load_iter', default=0, type=int, 
@@ -138,7 +140,7 @@ def create_parser():
 
     # visdom 
     parser.add_argument( '--viz_on', 
-      action='store_true', default=True, help='enable visdom visualization' )
+      action='store_true', default=False, help='enable visdom visualization' )
     parser.add_argument( '--viz_port', 
       default=8097, type=int, help='visdom port number' )
     parser.add_argument( '--viz_ll_iter', 
