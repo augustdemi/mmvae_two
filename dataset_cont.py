@@ -61,7 +61,7 @@ class Position(Dataset):
         a_idx, b_idx = self.get_pair(index)
         a_img, b_img, label = self.input_a[a_idx], self.input_b[b_idx], self.label[index]
 
-        a_img = torch.tensor(a_img).unsqueeze(0)
+        a_img = transform(a_img) * 255
         # b_img = transform(b_img)
 
         return a_img, b_img, label, index
