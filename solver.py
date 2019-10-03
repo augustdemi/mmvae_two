@@ -405,7 +405,14 @@ class Solver(object):
             # save output images (recon, synth, etc.)
             if iteration % self.output_save_iter == 0:
                 # self.save_embedding(iteration, index, muA_infA, muB_infB, muS_infA, muS_infB, muS_POE)
-                z_A, z_B = self.get_stat()
+                z_A, z_B, z_AS, z_BS, z_S = self.get_stat()
+
+                print('------------ traverse interpolation ------------')
+                print('interpolationA: ', np.min(np.array(z_A)), np.max(np.array(z_A)))
+                print('interpolationB: ', np.min(np.array(z_B)), np.max(np.array(z_B)))
+                print('interpolationAS: ', np.min(np.array(z_AS)), np.max(np.array(z_AS)))
+                print('interpolationBS: ', np.min(np.array(z_BS)), np.max(np.array(z_BS)))
+                print('interpolationS: ', np.min(np.array(z_S)), np.max(np.array(z_S)))
                 # 1) save the recon images
 
 
@@ -1254,7 +1261,7 @@ class Solver(object):
         return (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc, acc_ZS_infA, acc_ZS_infB, acc_ZS_POE)
 
     def get_stat(self):
-        z_A, z_B, z_S = [], [], []
+        z_A, z_B, z_AS, z_BS, z_S = [], [], [], [], []
         for _ in range(10000):
             rand_i = np.random.randint(self.N)
             random_XA, random_XB = self.data_loader.dataset.__getitem__(rand_i)[0:2]
@@ -1269,11 +1276,17 @@ class Solver(object):
                 muB_infB, _, _, _ = self.encoderB(random_XB)
 
             else:
-                muA_infA, _, _, _, _, _ = self.encoderA(random_XA)
-                muB_infB, _, _, _, _, _ = self.encoderB(random_XB)
+                muA_infA, _, _, muS_infA, _, logvarS_infA = self.encoderA(random_XA)
+                muB_infB, _, _, muS_infB, _, logvarS_infB = self.encoderB(random_XB)
+                muS_POE, _, _ = apply_poe(
+                    self.use_cuda, muS_infA, logvarS_infA, muS_infB, logvarS_infB,
+                )
             z_A.append(muA_infA.cpu().detach().numpy()[0])
             z_B.append(muB_infB.cpu().detach().numpy()[0])
-        return z_A, z_B
+            z_AS.append(muS_infA.cpu().detach().numpy()[0])
+            z_BS.append(muS_infB.cpu().detach().numpy()[0])
+            z_S.append(muS_POE.cpu().detach().numpy()[0])
+        return z_A, z_B, z_AS, z_BS, z_S
 
 
     def save_traverseA(self, iters, z_A, z_B, loc=-1):
