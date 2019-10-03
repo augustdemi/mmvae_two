@@ -140,7 +140,7 @@ def create_parser():
 
     # visdom 
     parser.add_argument( '--viz_on', 
-      action='store_true', default=False, help='enable visdom visualization' )
+      action='store_true', default=True, help='enable visdom visualization' )
     parser.add_argument( '--viz_port', 
       default=8097, type=int, help='visdom port number' )
     parser.add_argument( '--viz_ll_iter', 
