@@ -101,18 +101,21 @@ def load_3dface():
     for i in range(121):
         class_idx.update({i:[]})
 
-    face_pos = np.linspace(-1, 1, 11)
+    # face_pos = np.linspace(-1, 1, 11)
+    # azimuth_idx = range(20,-1,-1)
+    # elev_idx = range(11)
 
     face_pos_pair = {}
     idx = -1
-    for i in face_pos:
-        for j in face_pos:
+    for i in np.round(np.linspace(1, -1, 11),2):
+        for j in np.round(np.linspace(-1, 1, 11),2):
             idx += 1
             face_pos_pair.update({(i,j):idx})
 
     for i in range(n):
-        if (latent_values[i, 1], latent_values[i, 2]) in face_pos_pair.keys():
-            idx = face_pos_pair[(latent_values[i, 1], latent_values[i, 2])]
+        az, el = np.round(latent_values[i, 1],2), np.round(latent_values[i, 2],2)
+        if (az, el) in face_pos_pair.keys():
+            idx = face_pos_pair[(az, el)]
             class_idx[idx].append(i)
     return data, class_idx
 
