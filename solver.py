@@ -1620,7 +1620,7 @@ class Solver(object):
                 temp = []
                 for val in interpolation:
                     zS[:, row] = val
-                    sampleB = torch.sigmoid(decoderA(zB_ori, zS)).data
+                    sampleB = torch.sigmoid(decoderB(zB_ori, zS)).data
                     temp.append((torch.cat([sampleB[i] for i in range(sampleB.shape[0])], dim=1)).unsqueeze(0))
                 tempAll.append(torch.cat(temp, dim=0).unsqueeze(0))
 
