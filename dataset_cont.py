@@ -44,14 +44,10 @@ class Position(Dataset):
     def __init__(self, root, train=True):
         self.root = os.path.expanduser(root)
 
-        self.transform = transforms.Compose([
-            transforms.ToTensor(), ])
-
         self.train = train  # training set or test set
 
         self.input_a, self.input_b, self.class_idxA, self.class_idxB, self.label, self.per_class_n_pairs = make_dataset_fixed(self.train)
 
-        len(self.label)
 
     def __getitem__(self, index):
         """
@@ -65,14 +61,14 @@ class Position(Dataset):
         a_idx, b_idx = self.get_pair(index)
         a_img, b_img, label = self.input_a[a_idx], self.input_b[b_idx], self.label[index]
 
-        a_img = transform(a_img)
+        a_img = torch.tensor(a_img).unsqueeze(0)
         # b_img = transform(b_img)
 
         return a_img, b_img, label, index
 
     def __len__(self):
         # return self.input_a.size(0)
-        return len(self.input_a)
+        return len(self.label)
 
     def get_pair(self, index):
         label = self.label[index]
