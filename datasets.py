@@ -84,8 +84,7 @@ class DIGIT(Dataset):
         b_idx =  within_class_index % len(self.class_idxB[label])
         a_idx = self.class_idxA[label][a_idx]
         b_idx = self.class_idxB[label][b_idx]
-        assert (a_idx in self.class_idxA[label]) and b_idx in (self.class_idxB[label])
-        raise ValueError('class idx pair is wrong at index ', index)
+        assert (a_idx in self.class_idxA[label]) and b_idx in (self.class_idxB[label]), index
         return a_idx, b_idx
 
 
