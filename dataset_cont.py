@@ -41,12 +41,16 @@ class Position(Dataset):
                              optional function to apply to training outputs
     """
 
-    def __init__(self, root, train=True):
+    def __init__(self, root, train=True, aug=False):
         self.root = os.path.expanduser(root)
 
         self.train = train  # training set or test set
+        self.aug = aug
+        if self.aug:
+            self.input_a, self.input_b, self.class_idxA, self.class_idxB, self.label, self.per_class_n_pairs = make_dataset_augment(self.train)
+        else:
+            self.input_a, self.input_b, self.a_idx, self.b_idx, self.label = make_dataset_fixed(self.train)
 
-        self.input_a, self.input_b, self.class_idxA, self.class_idxB, self.label, self.per_class_n_pairs = make_dataset_fixed(self.train)
 
 
     def __getitem__(self, index):
@@ -57,13 +61,14 @@ class Position(Dataset):
             tuple: (image, target) where target is index of the target class.
         """
 
+        if self.aug:
+            a_idx, b_idx = self.get_pair(index)
+            a_img, b_img, label = self.input_a[a_idx], self.input_b[b_idx], self.label[index]
+        else:
+            a_img, b_img, label = self.input_a[self.a_idx[index]], self.input_b[self.b_idx[index]], self.label[index]
 
-        a_idx, b_idx = self.get_pair(index)
-        a_img, b_img, label = self.input_a[a_idx], self.input_b[b_idx], self.label[index]
 
         a_img = transform(a_img) * 255
-        # b_img = transform(b_img)
-
         return a_img, b_img, label, index
 
     def __len__(self):
@@ -101,10 +106,6 @@ def load_3dface():
     for i in range(121):
         class_idx.update({i:[]})
 
-    # face_pos = np.linspace(-1, 1, 11)
-    # azimuth_idx = range(20,-1,-1)
-    # elev_idx = range(11)
-
     face_pos_pair = {}
     idx = -1
     for i in np.round(np.linspace(1, -1, 11),2):
@@ -140,11 +141,6 @@ def load_dsprite():
 
     pos11 = [0, 4, 8, 12, 15, 16, 17, 20, 24, 28, 31]
 
-    # per_pos_latents = {}
-    # for i in pos11:
-    #     for j in pos11:
-    #         per_pos_latents.update({(i, j):[]})
-
     class_idx = {}
     for i in range(121):
         class_idx.update({i:[]})
@@ -154,42 +150,20 @@ def load_dsprite():
     for i in pos11:
         for j in pos11:
             idx += 1
-            pos_pair.update({(i,j):idx})
+            pos_pair.update({(i,j):idx}) # idx = cardinality of  all possible pairs: 0~120
 
 
     for i in pos11:
         for j in pos11:
             for one_latent in all_other_latents:
                 latent = one_latent.copy()
-                latent.extend([i, j])
-                # per_pos_latents[(i, j)].append(latent)
+                latent.extend([i, j]) # add posX, posY to (color, type, scale, rotation)
                 idx = pos_pair[(i,j)]
                 class_idx[idx].append(latent_to_index(latent))
-    # Select images
-    # imgs_sampled = imgs[class_idx[55]]
-    # from matplotlib import pyplot as plt
-    # def show_images_grid(imgs_, num_images=25):
-    #     ncols = int(np.ceil(num_images ** 0.5))
-    #     nrows = int(np.ceil(num_images / ncols))
-    #     _, axes = plt.subplots(ncols, nrows, figsize=(nrows * 3, ncols * 3))
-    #     axes = axes.flatten()
-    #
-    #     for ax_i, ax in enumerate(axes):
-    #         if ax_i < num_images:
-    #             ax.imshow(imgs_[ax_i], cmap='Greys_r', interpolation='nearest')
-    #             ax.set_xticks([])
-    #             ax.set_yticks([])
-    #         else:
-    #             ax.axis('off')
-    #     show_images_grid(imgs_sampled)
-    #     plt.show()
-    #
-    # for i in range(1,122):
-    #     class_idx.update({i:class_idx[i][:550]})
     return imgs, class_idx
 
 
-def match_label(modalA, modalB):
+def increase_label(modalA, modalB):
     n_labels = len(modalA['labels'])
     class_pair = {}
     for i in range(n_labels):
@@ -199,27 +173,57 @@ def match_label(modalA, modalB):
         n_a_imgs = len(modalA['labels'][i])
         n_b_imgs = len(modalB['labels'][i])
         per_class_n_pairs.append(n_a_imgs * n_b_imgs)
-        # for j in range(n_a_imgs):
-        #     for k in range(n_b_imgs):
-        #         class_pair[i].append((modalA['labels'][i+1][j],modalB['labels'][i+1][k]))
 
     all_index_pairs, all_labels = [], []
     for i in range(n_labels):
-        # all_index_pairs.extend(class_pair[i])
         all_labels.extend([i] * per_class_n_pairs[i])
-    # num_all_pairs = np.array(num_all_pairs).sum()
 
     return per_class_n_pairs, all_labels
+
+
+def make_dataset_augment(train):
+    np.random.seed(681307)
+    imgsA, class_idxA = load_dsprite()
+    imgsB, class_idxB = load_3dface()
+    modalA = {'imgs': imgsA, 'labels': class_idxA}
+    modalB = {'imgs': imgsB, 'labels': class_idxB}
+    per_class_n_pairs, all_labels = increase_label(modalA, modalB)
+    return imgsA, imgsB, class_idxA, class_idxB, all_labels, per_class_n_pairs
+
+
+
+
+def match_label(modalA, modalB):
+
+    a_idx, b_idx, labels = [], [], []
+    for i in range(len(modalA['class_idx'])):
+        class_idxA = modalA['class_idx'][i]
+        class_idxB = modalB['class_idx'][i]
+        print('label {} len A, B: {}, {}'.format(i, len(class_idxA), len(class_idxB)))
+        min_len = min(len(class_idxA), len(class_idxB))
+        if len(class_idxA) > min_len:
+            b_idx.extend(class_idxB)
+            np.random.shuffle(class_idxA)
+            a_idx.extend(class_idxA[:len(class_idxB)])
+        elif len(class_idxA) < min_len:
+            a_idx.extend(class_idxA)
+            np.random.shuffle(class_idxB)
+            b_idx.extend(class_idxB[:len(class_idxA)])
+        else:
+            a_idx.extend(class_idxA)
+            b_idx.extend(class_idxB)
+        labels.extend([i] * min_len)
+    return a_idx, b_idx, labels
 
 
 def make_dataset_fixed(train):
     np.random.seed(681307)
     imgsA, class_idxA = load_dsprite()
     imgsB, class_idxB = load_3dface()
-    modalA = {'imgs': imgsA, 'labels': class_idxA}
-    modalB = {'imgs': imgsB, 'labels': class_idxB}
-    per_class_n_pairs, all_labels = match_label(modalA, modalB)
-    return imgsA, imgsB, class_idxA, class_idxB, all_labels, per_class_n_pairs
+    modalA = {'imgs': imgsA, 'class_idx': class_idxA}
+    modalB = {'imgs': imgsB, 'class_idx': class_idxB}
+    a_idx, b_idx, labels = match_label(modalA, modalB)
+    return modalA['imgs'], modalB['imgs'], a_idx, b_idx, labels
 
 
 

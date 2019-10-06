@@ -3,7 +3,7 @@ import numpy as np
 
 import torch.optim as optim
 from datasets import DIGIT
-# from dataset_cont import Position
+from dataset_cont import Position
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 # -----------------------------------------------------------------------------#
@@ -43,6 +43,7 @@ class Solver(object):
         self.dataset = args.dataset
         self.nc = 3
         self.categ = args.categ
+        self.aug = args.aug
 
         # self.N = self.latent_values.shape[0]
         self.eval_metrics_iter = args.eval_metrics_iter
@@ -187,12 +188,14 @@ class Solver(object):
 
         # prepare dataloader (iterable)
         print('Start loading data...')
-        dset = DIGIT('./data', train=True)
+        if self.categ:
+            dset = DIGIT('./data', train=True, aug=self.aug)
+        else:
+            dset = Position('./data', train=True)
         self.data_loader = torch.utils.data.DataLoader(dset, batch_size=self.batch_size, shuffle=True)
-        test_dset = DIGIT('./data', train=False)
+        # test_dset = Position('./data', train=False)
         # self.test_data_loader = torch.utils.data.DataLoader(test_dset, batch_size=self.batch_size, shuffle=True)
         self.test_data_loader = self.data_loader
-        print('test: ', len(test_dset))
         self.N = len(self.data_loader.dataset)
         print('...done')
 
@@ -801,19 +804,28 @@ class Solver(object):
 
         if train:
             data_loader = self.data_loader
-            #msnit
-            fixed_idxs = []
-            for i in range(10):
-                fixed_idxs.append(i*36000000 + 10010000)
-            # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
+            if self.categ:
+                #msnit
+                fixed_idxs = []
+                for i in range(10):
+                    fixed_idxs.append(i*36000000 + 10010000)
+                # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
 
-            # a = []
-            # for i in range(10):
-            #     a.append(fixed_idxs[i] * fixed_idxs[i])
-            # fixed_idxs = a
-            # print(fixed_idxs)
-            # face
-            # fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
+                # a = []
+                # for i in range(10):
+                #     a.append(fixed_idxs[i] * fixed_idxs[i])
+                # fixed_idxs = a
+                # print(fixed_idxs)
+                # face
+            else:
+                if self.aug:
+                    fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
+                else:
+                    fixed_idxs = []
+                    np.random.seed(0)
+                    for i in range(60):
+                        fixed_idxs.append(550 * 2 * i + np.random.randint(549))
+                print(fixed_idxs)
             out_dir = os.path.join(self.output_dir_recon, 'train')
         else:
             data_loader = self.test_data_loader
@@ -983,11 +995,20 @@ class Solver(object):
 
         if train:
             data_loader = self.data_loader
-            # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
-            fixed_idxs = []
-            for i in range(10):
-                fixed_idxs.append(i*36000000 + 10010000)
-            # fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
+            if self.categ:
+                # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
+                fixed_idxs = []
+                for i in range(10):
+                    fixed_idxs.append(i*36000000 + 10010000)
+            else:
+                if self.aug:
+                    fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
+                else:
+                    fixed_idxs = []
+                    np.random.seed(0)
+                    for i in range(60):
+                        fixed_idxs.append(550 * 2 * i + np.random.randint(549))
+                print(fixed_idxs)
         else:
             data_loader = self.test_data_loader
             fixed_idxs = [2, 982, 2300, 3400, 4500, 5500, 6500, 7500, 8500, 9500]
@@ -1536,10 +1557,18 @@ class Solver(object):
         if train:
             data_loader = self.data_loader
             # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
-            fixed_idxs = []
-            for i in range(10):
-                fixed_idxs.append(i*36000000 + 10010000)
-            # fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
+            if self.categ:
+                fixed_idxs = []
+                for i in range(10):
+                    fixed_idxs.append(i*36000000 + 10010000)
+            else:
+                if self.aug:
+                    fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
+                else:
+                    fixed_idxs = []
+                    np.random.seed(0)
+                    for i in range(60):
+                        fixed_idxs.append(550 * 2 * i + np.random.randint(549))
             out_dir = os.path.join(self.output_dir_trvsl, str(iters), 'train')
         else:
             data_loader = self.test_data_loader
