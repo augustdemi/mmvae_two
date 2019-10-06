@@ -1567,8 +1567,8 @@ class Solver(object):
                 else:
                     fixed_idxs = []
                     np.random.seed(0)
-                    for i in range(60):
-                        fixed_idxs.append(550 * 2 * i + np.random.randint(549))
+                    for i in range(10):
+                        fixed_idxs.append(550 * 12 * i + np.random.randint(549))
             out_dir = os.path.join(self.output_dir_trvsl, str(iters), 'train')
         else:
             data_loader = self.test_data_loader
