@@ -47,17 +47,8 @@ class DIGIT(Dataset):
     def __init__(self, root, train=True):
         self.root = os.path.expanduser(root)
 
-        # self.transformA        = transforms.Compose([
-        #                      transforms.Resize(32),
-        #                      transforms.ToTensor()
-        #                  ])
-        # self.transformB        = transforms.Compose([
-        #                      transforms.ToTensor()
-        #                  ])
         self.train = train  # training set or test set
-
-        self.input_a, self.input_b, self.label = make_dataset_fixed(self.train)
-        len(self.input_a)
+        self.input_a, self.input_b, self.class_idxA, self.class_idxB, self.label, self.per_class_n_pairs = make_dataset_fixed(self.train)
 
     def __getitem__(self, index):
         """
@@ -67,21 +58,34 @@ class DIGIT(Dataset):
             tuple: (image, target) where target is index of the target class.
         """
 
-        a_img, b_img, label = self.input_a[index], self.input_b[index], self.label[index]
+        a_idx, b_idx = self.get_pair(index)
+        a_img, b_img, label = self.input_a[a_idx], self.input_b[b_idx], self.label[index]
 
         a_img = transform(a_img, resize=32)
-
         b_img = transform(b_img, resize=32)
 
-        # svhn_img = np.transpose(svhn_img, (1, 2, 0))
-        # svhn_img = Image.fromarray(svhn_img, mode='RGB')
-        # svhn_img = self.transformB(svhn_img)
 
         return a_img, b_img, label, index
 
     def __len__(self):
         # return self.input_a.size(0)
-        return len(self.input_a)
+        return len(self.label)
+
+
+    def get_pair(self, index):
+        label = self.label[index]
+        sum = np.array(self.per_class_n_pairs).cumsum()
+
+        if label != 0:
+            within_class_index = index - sum[label-1]
+        else:
+            within_class_index = index
+        a_idx = int(within_class_index / len(self.class_idxB[label]))
+        b_idx =  within_class_index % len(self.class_idxB[label])
+        a_idx = self.class_idxA[label][a_idx]
+        b_idx = self.class_idxB[label][b_idx]
+        return a_idx, b_idx
+
 
 
 def load_mnist():
@@ -141,35 +145,70 @@ def load_fashionMNIST():
         'labels': test_loader.dataset.test_labels.numpy()
     }
 
+
     return train_data, test_data
 
 
-def match_label(mnist, svhn):
-    a_imgs = {}
-    b_imgs = {}
+# def match_label(mnist, svhn):
+#     a_imgs = {}
+#     b_imgs = {}
+#
+#     for i in range(10):
+#         a_imgs.update({i: []})
+#         b_imgs.update({i: []})
+#     for i in range(len(mnist['labels'])):
+#         a_imgs[mnist['labels'][i]].append(mnist['imgs'][i])
+#     for i in range(len(svhn['labels'])):
+#         b_imgs[svhn['labels'][i]].append(svhn['imgs'][i])
+#
+#     x_img, y_img, labels = [], [], []
+#     for i in range(10):
+#         min_len = min(len(a_imgs[i]), len(b_imgs[i]))
+#         print('label {} len {}'.format(i, min_len))
+#         x_img.extend(a_imgs[i][:min_len])
+#         y_img.extend(b_imgs[i][:min_len])
+#         labels.extend([i] * min_len)
+#     return x_img, y_img, labels
+
+
+"""
+Increase labels according to the total number of pairs.
+The increased labels will be linked to each index of an pair in 'get_pair'
+"""
+def match_label(modalA, modalB):
+    n_labels = len(modalA['class_idx'])
+    per_class_n_pairs = []
+    for i in range(n_labels):
+        n_a_imgs = len(modalA['class_idx'][i])
+        n_b_imgs = len(modalB['class_idx'][i])
+        per_class_n_pairs.append(n_a_imgs * n_b_imgs)
+
+    all_index_pairs, all_labels = [], []
+    for i in range(n_labels):
+        all_labels.extend([i] * per_class_n_pairs[i])
+    return per_class_n_pairs, all_labels
+
+def make_class_idx(dataset):
+    class_idx = {}
 
     for i in range(10):
-        a_imgs.update({i: []})
-        b_imgs.update({i: []})
-    for i in range(len(mnist['labels'])):
-        a_imgs[mnist['labels'][i]].append(mnist['imgs'][i])
-    for i in range(len(svhn['labels'])):
-        b_imgs[svhn['labels'][i]].append(svhn['imgs'][i])
+        class_idx.update({i: []})
+    for i in range(len(dataset['labels'])):
+        class_idx[dataset['labels'][i]].append(i)
 
-    x_img, y_img, labels = [], [], []
-    for i in range(10):
-        min_len = min(len(a_imgs[i]), len(b_imgs[i]))
-        print('label {} len {}'.format(i, min_len))
-        x_img.extend(a_imgs[i][:min_len])
-        y_img.extend(b_imgs[i][:min_len])
-        labels.extend([i] * min_len)
-
+    #
+    # print('----------------------------------')
+    # print(len(modalA['labels']))
+    # print(len(modalB['labels']))
+    # print('- - - - - - ')
     # for i in range(10):
-    #     print('i = {} : len of inputA={}, len of inputB={}'.format(i, len(a_imgs[i]), len(b_imgs[i])))
-    #     a_imgs[i] = np.array(a_imgs[i])
-    #     b_imgs[i] = np.array(b_imgs[i])
-
-    return x_img, y_img, labels
+    #     print(len(a_labels[i]))
+    #     print(len(b_labels[i]))
+    #     print()
+    # print('- - - - - - ')
+    #
+    # print('----------------------------------')
+    return class_idx
 
 
 def make_dataset_fixed(train):
@@ -177,12 +216,22 @@ def make_dataset_fixed(train):
     trainA, testA = load_mnist()
     trainB, testB = load_fashionMNIST()
 
-    if train:
-        input_a, input_b, labels = match_label(trainA, trainB)
-    else:
-        input_a, input_b, labels = match_label(testA, testB)
 
-    return input_a, input_b, labels
+
+    if train:
+        trainA['class_idx'] = class_idxA = make_class_idx(trainA)
+        trainB['class_idx'] = class_idxB = make_class_idx(trainB)
+        per_class_n_pairs, all_labels = match_label(trainA, trainB)
+        imgsA = trainA['imgs']
+        imgsB = trainB['imgs']
+    else:
+        testA['class_idx'] = class_idxA = make_class_idx(testA)
+        testB['class_idx'] = class_idxB = make_class_idx(testB)
+        per_class_n_pairs, all_labels = match_label(testA, testB)
+        imgsA = testA['imgs']
+        imgsB = testB['imgs']
+
+    return imgsA, imgsB, class_idxA, class_idxB, all_labels, per_class_n_pairs
 
 
 if __name__ == "__main__":

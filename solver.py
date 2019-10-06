@@ -2,7 +2,8 @@ import os
 import numpy as np
 
 import torch.optim as optim
-from dataset_cont import Position
+from datasets import DIGIT
+# from dataset_cont import Position
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 # -----------------------------------------------------------------------------#
@@ -136,15 +137,17 @@ class Solver(object):
         self.n_data = args.n_data
 
         if self.ckpt_load_iter == 0:  # create a new model
-            self.encoderA = EncoderSingle3(self.zA_dim, self.zS_dim)
-            self.encoderB = EncoderSingle3(self.zB_dim, self.zS_dim)
-            self.decoderA = DecoderSingle3(self.zA_dim, self.zS_dim)
-            self.decoderB = DecoderSingle3(self.zB_dim, self.zS_dim)
 
-            # self.encoderA = EncoderA(self.zA_dim, self.zS_dim)
-            # self.encoderB = EncoderA(self.zB_dim, self.zS_dim)
-            # self.decoderA = DecoderA(self.zA_dim, self.zS_dim)
-            # self.decoderB = DecoderA(self.zB_dim, self.zS_dim)
+            if self.categ:
+                self.encoderA = EncoderA(self.zA_dim, self.zS_dim)
+                self.encoderB = EncoderA(self.zB_dim, self.zS_dim)
+                self.decoderA = DecoderA(self.zA_dim, self.zS_dim)
+                self.decoderB = DecoderA(self.zB_dim, self.zS_dim)
+            else:
+                self.encoderA = EncoderSingle3(self.zA_dim, self.zS_dim)
+                self.encoderB = EncoderSingle3(self.zB_dim, self.zS_dim)
+                self.decoderA = DecoderSingle3(self.zA_dim, self.zS_dim)
+                self.decoderB = DecoderSingle3(self.zB_dim, self.zS_dim)
 
 
         else:  # load a previously saved model
@@ -184,9 +187,9 @@ class Solver(object):
 
         # prepare dataloader (iterable)
         print('Start loading data...')
-        dset = Position('./data', train=True)
+        dset = DIGIT('./data', train=True)
         self.data_loader = torch.utils.data.DataLoader(dset, batch_size=self.batch_size, shuffle=True)
-        test_dset = Position('./data', train=False)
+        test_dset = DIGIT('./data', train=False)
         # self.test_data_loader = torch.utils.data.DataLoader(test_dset, batch_size=self.batch_size, shuffle=True)
         self.test_data_loader = self.data_loader
         print('test: ', len(test_dset))
@@ -233,7 +236,7 @@ class Solver(object):
                     q(zA,zB,zS | xA,xB) := qI(zA|xA) * qT(zB|xB) * q(zS|xA,xB)
                         where q(zS|xA,xB) \propto p(zS) * qI(zS|xA) * qT(zS|xB)
                 '''
-                cate_prob_POE = torch.tensor(1 / 10) * cate_prob_infA * cate_prob_infB
+                cate_prob_POE = torch.tensor(1 / self.zS_dim) * cate_prob_infA * cate_prob_infB
 
                 # encoder samples (for training)
                 ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
@@ -410,9 +413,10 @@ class Solver(object):
                 print('------------ traverse interpolation ------------')
                 print('interpolationA: ', np.min(np.array(z_A)), np.max(np.array(z_A)))
                 print('interpolationB: ', np.min(np.array(z_B)), np.max(np.array(z_B)))
-                print('interpolationAS: ', np.min(np.array(z_AS)), np.max(np.array(z_AS)))
-                print('interpolationBS: ', np.min(np.array(z_BS)), np.max(np.array(z_BS)))
-                print('interpolationS: ', np.min(np.array(z_S)), np.max(np.array(z_S)))
+                if not self.categ:
+                    print('interpolationAS: ', np.min(np.array(z_AS)), np.max(np.array(z_AS)))
+                    print('interpolationBS: ', np.min(np.array(z_BS)), np.max(np.array(z_BS)))
+                    print('interpolationS: ', np.min(np.array(z_S)), np.max(np.array(z_S)))
                 # 1) save the recon images
 
 
@@ -797,18 +801,29 @@ class Solver(object):
 
         if train:
             data_loader = self.data_loader
+            #msnit
+            fixed_idxs = []
+            for i in range(10):
+                fixed_idxs.append(i*36000000 + 10010000)
             # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
-            fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
+
+            # a = []
+            # for i in range(10):
+            #     a.append(fixed_idxs[i] * fixed_idxs[i])
+            # fixed_idxs = a
+            # print(fixed_idxs)
+            # face
+            # fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
             out_dir = os.path.join(self.output_dir_recon, 'train')
         else:
             data_loader = self.test_data_loader
             fixed_idxs = [2, 982, 2300, 3400, 4500, 5500, 6500, 7500, 8500, 9500]
             out_dir = os.path.join(self.output_dir_recon, 'test')
 
-        fixed_idxs60 = []
-        for idx in fixed_idxs:
-            for i in range(6):
-                fixed_idxs60.append(idx + i)
+        fixed_idxs60 = fixed_idxs
+        # for idx in fixed_idxs:
+        #     for i in range(6):
+        #         fixed_idxs60.append(idx + i)
 
         XA = [0] * len(fixed_idxs60)
         XB = [0] * len(fixed_idxs60)
@@ -969,7 +984,10 @@ class Solver(object):
         if train:
             data_loader = self.data_loader
             # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
-            fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
+            fixed_idxs = []
+            for i in range(10):
+                fixed_idxs.append(i*36000000 + 10010000)
+            # fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
         else:
             data_loader = self.test_data_loader
             fixed_idxs = [2, 982, 2300, 3400, 4500, 5500, 6500, 7500, 8500, 9500]
@@ -1272,20 +1290,22 @@ class Solver(object):
             random_XB = random_XB.unsqueeze(0)
 
             if self.categ:
-                muA_infA, _, _, _ = self.encoderA(random_XA)
-                muB_infB, _, _, _ = self.encoderB(random_XB)
-
+                muA_infA, _, _, cate_prob_infA = self.encoderA(random_XA)
+                muB_infB, _, _, cate_prob_infB = self.encoderB(random_XB)
+                # cate_prob_POE = torch.tensor(1 / self.zS_dim) * cate_prob_infA * cate_prob_infB
+                # fixed_zS = sample_gumbel_softmax(self.use_cuda, cate_prob_POE, train=False)
             else:
                 muA_infA, _, _, muS_infA, _, logvarS_infA = self.encoderA(random_XA)
                 muB_infB, _, _, muS_infB, _, logvarS_infB = self.encoderB(random_XB)
                 muS_POE, _, _ = apply_poe(
                     self.use_cuda, muS_infA, logvarS_infA, muS_infB, logvarS_infB,
                 )
+                z_AS.append(muS_infA.cpu().detach().numpy()[0])
+                z_BS.append(muS_infB.cpu().detach().numpy()[0])
+                z_S.append(muS_POE.cpu().detach().numpy()[0])
             z_A.append(muA_infA.cpu().detach().numpy()[0])
             z_B.append(muB_infB.cpu().detach().numpy()[0])
-            z_AS.append(muS_infA.cpu().detach().numpy()[0])
-            z_BS.append(muS_infB.cpu().detach().numpy()[0])
-            z_S.append(muS_POE.cpu().detach().numpy()[0])
+
         return z_A, z_B, z_AS, z_BS, z_S
 
 
@@ -1516,7 +1536,10 @@ class Solver(object):
         if train:
             data_loader = self.data_loader
             # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
-            fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
+            fixed_idxs = []
+            for i in range(10):
+                fixed_idxs.append(i*36000000 + 10010000)
+            # fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
             out_dir = os.path.join(self.output_dir_trvsl, str(iters), 'train')
         else:
             data_loader = self.test_data_loader
@@ -1547,7 +1570,7 @@ class Solver(object):
         if self.categ:
             fixed_zmuA, _, _, cate_prob_infA = encoderA(fixed_XA)
             fixed_zmuB, _, _, cate_prob_infB = encoderB(fixed_XB)
-            fixed_cate_probS = torch.tensor(1 / 10) * cate_prob_infA * cate_prob_infB
+            fixed_cate_probS = torch.tensor(1 / self.zS_dim) * cate_prob_infA * cate_prob_infB
             fixed_zS = sample_gumbel_softmax(self.use_cuda, fixed_cate_probS, train=False)
 
         else:
