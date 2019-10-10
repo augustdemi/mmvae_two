@@ -163,7 +163,7 @@ def load_dsprite():
     return imgs, class_idx
 
 
-def increase_label(modalA, modalB):
+def augment_label(modalA, modalB):
     n_labels = len(modalA['labels'])
     class_pair = {}
     for i in range(n_labels):
@@ -187,7 +187,7 @@ def make_dataset_augment(train):
     imgsB, class_idxB = load_3dface()
     modalA = {'imgs': imgsA, 'labels': class_idxA}
     modalB = {'imgs': imgsB, 'labels': class_idxB}
-    per_class_n_pairs, all_labels = increase_label(modalA, modalB)
+    per_class_n_pairs, all_labels = augment_label(modalA, modalB)
     return imgsA, imgsB, class_idxA, class_idxB, all_labels, per_class_n_pairs
 
 
