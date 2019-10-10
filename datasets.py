@@ -113,7 +113,17 @@ def load_mnist():
         'imgs': test_loader.dataset.test_data.numpy(),
         'labels': test_loader.dataset.test_labels.numpy()
     }
-
+    train_class_idx = {}
+    test_class_idx = {}
+    for i in range(10):
+        train_class_idx.update({i: []})
+        test_class_idx.update({i: []})
+    for i in range(len(train_data['labels'])):
+        train_class_idx[train_data['labels'][i]].append(i)
+    for i in range(len(test_data['labels'])):
+        test_class_idx[test_data['labels'][i]].append(i)
+    train_data['class_idx'] = train_class_idx
+    test_data['class_idx'] = test_class_idx
     return train_data, test_data
 
 
@@ -172,29 +182,9 @@ def load_fashionMNIST():
         test_class_idx[test_data['labels'][i]].append(i)
     train_data['class_idx'] = train_class_idx
     test_data['class_idx'] = test_class_idx
+
+
     return train_data, test_data
-
-
-def match_label(mnist, svhn):
-    a_imgs = {}
-    b_imgs = {}
-
-    for i in range(10):
-        a_imgs.update({i: []})
-        b_imgs.update({i: []})
-    for i in range(len(mnist['labels'])):
-        a_imgs[mnist['labels'][i]].append(mnist['imgs'][i])
-    for i in range(len(svhn['labels'])):
-        b_imgs[svhn['labels'][i]].append(svhn['imgs'][i])
-
-    x_img, y_img, labels = [], [], []
-    for i in range(10):
-        min_len = min(len(a_imgs[i]), len(b_imgs[i]))
-        print('label {} len {}'.format(i, min_len))
-        x_img.extend(a_imgs[i][:min_len])
-        y_img.extend(b_imgs[i][:min_len])
-        labels.extend([i] * min_len)
-    return x_img, y_img, labels
 
 
 def match_label(modalA, modalB):
@@ -221,13 +211,10 @@ def match_label(modalA, modalB):
 
 
 
-
-
 def make_dataset_fixed(train):
     np.random.seed(681307)
     trainA, testA = load_mnist()
     trainB, testB = load_fashionMNIST()
-
 
     if train:
         modalA = trainA
