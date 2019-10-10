@@ -806,10 +806,15 @@ class Solver(object):
             data_loader = self.data_loader
             if self.categ:
                 #msnit
-                fixed_idxs = []
-                for i in range(10):
-                    fixed_idxs.append(i*36000000 + 10010000)
-                # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
+                if self.aug:
+                    fixed_idxs = []
+                    for i in range(10):
+                        fixed_idxs.append(i*36000000 + 10010000)
+                else:
+                    fixed_idxs = []
+                    for i in range(10):
+                        fixed_idxs.append(5800 * i + 2005)
+                    # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
 
                 # a = []
                 # for i in range(10):
@@ -996,10 +1001,14 @@ class Solver(object):
         if train:
             data_loader = self.data_loader
             if self.categ:
-                # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
-                fixed_idxs = []
-                for i in range(10):
-                    fixed_idxs.append(i*36000000 + 10010000)
+                if self.aug:
+                    fixed_idxs = []
+                    for i in range(10):
+                        fixed_idxs.append(i*36000000 + 10010000)
+                else:
+                    fixed_idxs = []
+                    for i in range(10):
+                        fixed_idxs.append(5800 * i + 2005)
             else:
                 if self.aug:
                     fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
@@ -1558,9 +1567,14 @@ class Solver(object):
             data_loader = self.data_loader
             # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
             if self.categ:
-                fixed_idxs = []
-                for i in range(10):
-                    fixed_idxs.append(i*36000000 + 10010000)
+                if self.aug:
+                    fixed_idxs = []
+                    for i in range(10):
+                        fixed_idxs.append(i*36000000 + 10010000)
+                else:
+                    fixed_idxs = []
+                    for i in range(10):
+                        fixed_idxs.append(5800 * i + 2005)
             else:
                 if self.aug:
                     fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
