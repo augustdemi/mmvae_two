@@ -126,36 +126,6 @@ def load_mnist():
     test_data['class_idx'] = test_class_idx
     return train_data, test_data
 
-
-def load_svhn():
-    train_loader = torch.utils.data.DataLoader(
-        dset.SVHN(root='../data/svhn', split='train', download=True))
-    test_loader = torch.utils.data.DataLoader(
-        dset.SVHN(root='../data/svhn', split='test', download=True))
-
-    train_data = {
-        'imgs': train_loader.dataset.data,
-        'labels': train_loader.dataset.labels
-    }
-    test_data = {
-        'imgs': test_loader.dataset.data,
-        'labels': test_loader.dataset.labels
-    }
-
-    train_class_idx = {}
-    test_class_idx = {}
-    for i in range(10):
-        train_class_idx.update({i: []})
-        test_class_idx.update({i: []})
-    for i in range(len(train_data['labels'])):
-        train_class_idx[train_data['labels'][i]].append(i)
-    for i in range(len(test_data['labels'])):
-        test_class_idx[test_data['labels'][i]].append(i)
-    train_data['class_idx'] = train_class_idx
-    test_data['class_idx'] = test_class_idx
-    return train_data, test_data
-
-
 def load_fashionMNIST():
     train_loader = torch.utils.data.DataLoader(
         dset.FashionMNIST(root='../data/fMNIST', train=True, download=True))
@@ -176,14 +146,14 @@ def load_fashionMNIST():
     for i in range(10):
         train_class_idx.update({i: []})
         test_class_idx.update({i: []})
+
+    new_idx = [5, 4, 0, 7, 1, 2, 6, 3, 9, 8]
     for i in range(len(train_data['labels'])):
-        train_class_idx[train_data['labels'][i]].append(i)
+        train_class_idx[new_idx[train_data['labels'][i]]].append(i)
     for i in range(len(test_data['labels'])):
-        test_class_idx[test_data['labels'][i]].append(i)
+        test_class_idx[new_idx[test_data['labels'][i]]].append(i)
     train_data['class_idx'] = train_class_idx
     test_data['class_idx'] = test_class_idx
-
-
     return train_data, test_data
 
 
