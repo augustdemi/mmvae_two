@@ -189,7 +189,7 @@ class Solver(object):
         # prepare dataloader (iterable)
         print('Start loading data...')
         if self.categ:
-            dset = DIGIT('./data', train=True)
+            dset = DIGIT('./data', train=True, aug=self.aug)
         else:
             dset = Position('./data', train=True, aug=self.aug)
         self.data_loader = torch.utils.data.DataLoader(dset, batch_size=self.batch_size, shuffle=True)
