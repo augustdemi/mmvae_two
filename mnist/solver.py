@@ -300,13 +300,13 @@ class Solver(object):
             XB_infB_recon = self.decoderB(ZB_infB, ZS_infB)
 
             # loss_recon_infA = F.l1_loss(torch.sigmoid(XA_infA_recon), XA, reduction='sum').div(XA.size(0))
-            loss_recon_infA = reconstruction_loss(XA, torch.sigmoid(XA_infA_recon).view(self.batch_size,-1,28,28), distribution="bernoulli")
+            loss_recon_infA = reconstruction_loss(XA, torch.sigmoid(XA_infA_recon).view(XA.shape[0],-1,28,28), distribution="bernoulli")
             loss_recon_infB = cross_entropy_label(XB_infB_recon, XB)
 
 
             #
             loss_recon_POE = \
-                self.lambdaA * reconstruction_loss(XA, torch.sigmoid(XA_POE_recon).view(self.batch_size,-1,28,28), distribution="bernoulli") + \
+                self.lambdaA * reconstruction_loss(XA, torch.sigmoid(XA_POE_recon).view(XA.shape[0],-1,28,28), distribution="bernoulli") + \
                 self.lambdaB * cross_entropy_label(XB_POE_recon, XB)
 
             loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB + loss_recon_POE
