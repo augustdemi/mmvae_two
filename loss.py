@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from torch.nn import functional as F
-
+from torch.autograd import Variable
 
 
 
@@ -88,6 +88,25 @@ def reconstruction_loss(data, recon_data, distribution="bernoulli"):
     return loss
 
 
+def cross_entropy_label(input, target, eps=1e-6):
+    """k-Class Cross Entropy (Log Softmax + Log Loss)
+
+    @param input: torch.Tensor (size N x K)
+    @param target: torch.Tensor (size N x K)
+    @param eps: error to add (default: 1e-6)
+    @return loss: torch.Tensor (size N)
+    """
+    if not (target.size(0) == input.size(0)):
+        raise ValueError(
+            "Target size ({}) must be the same as input size ({})".format(
+                target.size(0), input.size(0)))
+
+    batch_size = input.shape[0]
+    log_input = F.log_softmax(input + eps, dim=1)
+    y_onehot = Variable(log_input.data.new(log_input.size()).zero_())
+    y_onehot = y_onehot.scatter(1, target.unsqueeze(1), 1)
+    loss = y_onehot * log_input
+    return -torch.sum(loss) / batch_size
 
 def kl_loss_function(use_cuda, num_steps, latent_dist, is_continuous=True, is_discrete=True, cont_capacity=[0.0, 5.0, 25000, 30], disc_capacity=[0.0, 5.0, 25000, 30]):
     """
