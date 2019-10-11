@@ -244,7 +244,7 @@ class Solver(object):
                     q(zA,zB,zS | xA,xB) := qI(zA|xA) * qT(zB|xB) * q(zS|xA,xB)
                         where q(zS|xA,xB) \propto p(zS) * qI(zS|xA) * qT(zS|xB)
                 '''
-                cate_prob_POE = torch.tensor(1 / self.zS_dim) * cate_prob_infA * cate_prob_infB
+                cate_prob_POE = cate_prob_infA * cate_prob_infB
 
                 # encoder samples (for training)
                 ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
@@ -264,6 +264,7 @@ class Solver(object):
                 ZS_infB = torch.exp(log_ZS_infB)
                 log_ZS_POE = relaxedCategS.rsample()
                 ZS_POE = torch.exp(log_ZS_POE)
+                ZS_POE = torch.sqrt(ZS_POE)
                 # the above sampling of ZS_infA/B are same 'way' as below
                 # ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA)
                 # ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB)
@@ -443,6 +444,7 @@ class Solver(object):
                 # self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
                 # self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
                 # self.save_traverse(iteration, z_A, z_B)
+                self.save_traverseA(iteration)
                 # self.save_traverse(iteration, z_A, z_B, train=False)
 
             # if iteration % self.eval_metrics_iter == 0:
@@ -874,7 +876,7 @@ class Solver(object):
                 q(zA,zB,zS | xA,xB) := qI(zA|xA) * qT(zB|xB) * q(zS|xA,xB)
                     where q(zS|xA,xB) \propto p(zS) * qI(zS|xA) * qT(zS|xB)
             '''
-            cate_prob_POE = torch.tensor(1 / 10) * cate_prob_infA * cate_prob_infB
+            cate_prob_POE = cate_prob_infA * cate_prob_infB
 
             # encoder samples (for training)
             ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
@@ -884,6 +886,7 @@ class Solver(object):
             ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA, train=False)
             ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB, train=False)
             ZS_POE = sample_gumbel_softmax(self.use_cuda, cate_prob_POE, train=False)
+            ZS_POE= torch.sqrt(ZS_POE)
 
         else:
             muA_infA, stdA_infA, logvarA_infA, \
@@ -1346,7 +1349,7 @@ class Solver(object):
         return z_A, z_B, z_AS, z_BS, z_S
 
 
-    def save_traverseA(self, iters, z_A, z_B, loc=-1):
+    def save_traverseA(self, iters, loc=-1):
 
         self.set_mode(train=False)
 
@@ -1354,29 +1357,23 @@ class Solver(object):
         decoderA = self.decoderA
         interpolationA = torch.tensor(np.linspace(-3, 3, self.zS_dim))
 
-        print('------------ traverse interpolation ------------')
-        print('interpolationA: ', np.min(np.array(z_A)), np.max(np.array(z_A)))
-        print('interpolationB: ', np.min(np.array(z_B)), np.max(np.array(z_B)))
-
         if self.record_file:
             ####
-            fixed_idxs = [3246, 7001, 14305, 19000, 27444, 33100, 38000, 45231, 51000, 55121]
+            fixed_idxs = []
+            for i in range(10):
+                fixed_idxs.append(5800 * i + 2005)
 
             fixed_XA = [0] * len(fixed_idxs)
-            fixed_XB = [0] * len(fixed_idxs)
 
             for i, idx in enumerate(fixed_idxs):
 
-                fixed_XA[i], fixed_XB[i] = \
+                fixed_XA[i], _ = \
                     self.data_loader.dataset.__getitem__(idx)[0:2]
                 if self.use_cuda:
                     fixed_XA[i] = fixed_XA[i].cuda()
-                    fixed_XB[i] = fixed_XB[i].cuda()
                 fixed_XA[i] = fixed_XA[i].unsqueeze(0)
-                fixed_XB[i] = fixed_XB[i].unsqueeze(0)
 
             fixed_XA = torch.cat(fixed_XA, dim=0)
-            fixed_XB = torch.cat(fixed_XB, dim=0)
 
             fixed_zmuA, _, _, cate_prob_infA = encoderA(fixed_XA)
 
@@ -1405,6 +1402,7 @@ class Solver(object):
             for val in interpolationA:
                 zA[:, row] = val
                 sampleA = torch.sigmoid(decoderA(zA, zS_ori)).data
+                sampleA = sampleA.view(sampleA.shape[0], -1, 28, 28)
                 temp.append((torch.cat([sampleA[i] for i in range(sampleA.shape[0])], dim=1)).unsqueeze(0))
 
             tempA.append(torch.cat(temp, dim=0).unsqueeze(0)) # torch.cat(temp, dim=0) = num_trv, 1, 32*num_samples, 32
@@ -1420,6 +1418,7 @@ class Solver(object):
                 zS = zS.cuda()
 
             sampleA = torch.sigmoid(decoderA(zA_ori, zS)).data
+            sampleA = sampleA.view(sampleA.shape[0], -1, 28, 28)
             temp.append((torch.cat([sampleA[i] for i in range(sampleA.shape[0])], dim=1)).unsqueeze(0))
         tempA.append(torch.cat(temp, dim=0).unsqueeze(0))
         gifs = torch.cat(tempA, dim=0) #torch.Size([11, 10, 1, 384, 32])
@@ -1572,24 +1571,9 @@ class Solver(object):
         print('interpolationB: ', np.min(np.array(z_B)), np.max(np.array(z_B)))
         if train:
             data_loader = self.data_loader
-            # fixed_idxs = [3246, 7001, 14308, 19000, 27447, 33103, 38002, 45232, 51000, 55125]
-            if self.categ:
-                if self.aug:
-                    fixed_idxs = []
-                    for i in range(10):
-                        fixed_idxs.append(i*36000000 + 10010000)
-                else:
-                    fixed_idxs = []
-                    for i in range(10):
-                        fixed_idxs.append(5800 * i + 2005)
-            else:
-                if self.aug:
-                    fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
-                else:
-                    fixed_idxs = []
-                    np.random.seed(0)
-                    for i in range(10):
-                        fixed_idxs.append(550 * 12 * i + np.random.randint(549))
+            fixed_idxs = []
+            for i in range(10):
+                fixed_idxs.append(5800 * i + 2005)
             out_dir = os.path.join(self.output_dir_trvsl, str(iters), 'train')
         else:
             data_loader = self.test_data_loader
@@ -1620,8 +1604,9 @@ class Solver(object):
         if self.categ:
             fixed_zmuA, _, _, cate_prob_infA = encoderA(fixed_XA)
             fixed_zmuB, _, _, cate_prob_infB = encoderB(fixed_XB)
-            fixed_cate_probS = torch.tensor(1 / self.zS_dim) * cate_prob_infA * cate_prob_infB
+            fixed_cate_probS = cate_prob_infA * cate_prob_infB
             fixed_zS = sample_gumbel_softmax(self.use_cuda, fixed_cate_probS, train=False)
+            fixed_zS = torch.sqrt(fixed_zS)
 
         else:
             fixed_zmuA, _, _, \
@@ -1651,6 +1636,7 @@ class Solver(object):
             for val in interpolation:
                 zA[:, row] = val
                 sampleA = torch.sigmoid(decoderA(zA, zS_ori)).data
+                sampleA = sampleA.view(sampleA.shape[0], -1, 28, 28)
                 temp.append((torch.cat([sampleA[i] for i in range(sampleA.shape[0])], dim=1)).unsqueeze(0))
 
             tempAll.append(torch.cat(temp, dim=0).unsqueeze(0)) # torch.cat(temp, dim=0) = num_trv, 1, 32*num_samples, 32
@@ -1668,6 +1654,7 @@ class Solver(object):
                     zS = zS.cuda()
 
                 sampleA = torch.sigmoid(decoderA(zA_ori, zS)).data
+                sampleA = sampleA.view(sampleA.shape[0], -1, 28, 28)
                 temp.append((torch.cat([sampleA[i] for i in range(sampleA.shape[0])], dim=1)).unsqueeze(0))
             tempAll.append(torch.cat(temp, dim=0).unsqueeze(0))
             #B
@@ -1682,6 +1669,7 @@ class Solver(object):
                     zS = zS.cuda()
 
                 sampleB = torch.sigmoid(decoderB(zB_ori, zS)).data
+                sampleB = sampleB.view(sampleB.shape[0], -1, 28, 28)
                 temp.append((torch.cat([sampleB[i] for i in range(sampleB.shape[0])], dim=1)).unsqueeze(0))
             tempAll.append(torch.cat(temp, dim=0).unsqueeze(0))
         else:
@@ -1695,6 +1683,7 @@ class Solver(object):
                 for val in interpolation:
                     zS[:, row] = val
                     sampleA = torch.sigmoid(decoderA(zA_ori, zS)).data
+                    sampleA = sampleA.view(sampleA.shape[0], -1, 28, 28)
                     temp.append((torch.cat([sampleA[i] for i in range(sampleA.shape[0])], dim=1)).unsqueeze(0))
                 tempAll.append(torch.cat(temp, dim=0).unsqueeze(0))
             #B
@@ -1707,6 +1696,7 @@ class Solver(object):
                 for val in interpolation:
                     zS[:, row] = val
                     sampleB = torch.sigmoid(decoderB(zB_ori, zS)).data
+                    sampleB = sampleB.view(sampleB.shape[0], -1, 28, 28)
                     temp.append((torch.cat([sampleB[i] for i in range(sampleB.shape[0])], dim=1)).unsqueeze(0))
                 tempAll.append(torch.cat(temp, dim=0).unsqueeze(0))
 
@@ -1721,6 +1711,7 @@ class Solver(object):
             for val in interpolation:
                 zB[:, row] = val
                 sampleB = torch.sigmoid(decoderB(zB, zS_ori)).data
+                sampleB = sampleB.view(sampleB.shape[0], -1, 28, 28)
                 temp.append((torch.cat([sampleB[i] for i in range(sampleB.shape[0])], dim=1)).unsqueeze(0))
 
             tempAll.append(torch.cat(temp, dim=0).unsqueeze(0)) # torch.cat(temp, dim=0) = num_trv, 1, 32*num_samples, 32
