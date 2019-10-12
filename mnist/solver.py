@@ -422,7 +422,7 @@ class Solver(object):
 
                 print('------------ traverse interpolation ------------')
                 print('interpolationA: ', np.min(np.array(z_A)), np.max(np.array(z_A)))
-                print('interpolationB: ', np.min(np.array(z_B)), np.max(np.array(z_B)))
+                # print('interpolationB: ', np.min(np.array(z_B)), np.max(np.array(z_B)))
                 if not self.categ:
                     print('interpolationAS: ', np.min(np.array(z_AS)), np.max(np.array(z_AS)))
                     print('interpolationBS: ', np.min(np.array(z_BS)), np.max(np.array(z_BS)))
