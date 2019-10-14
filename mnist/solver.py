@@ -24,10 +24,10 @@ class Solver(object):
 
         self.args = args
 
-        self.name = '%s_lamkl_%s_zA_%s_zB_%s_zS_%s_HYPER_beta1_%s_beta2_%s_beta3_%s_beta11_%s_beta22_%s_beta33_%s' % \
+        self.name = '%s_lamkl_%s_zA_%s_zB_%s_zS_%s_HYPER_beta1_%s_beta2_%s_beta3_%s_beta11_%s_beta22_%s_beta33_%s_lA_%s_lB_%s' % \
                     (
                         args.dataset, args.lamkl, args.zA_dim, args.zB_dim, args.zS_dim, args.beta1, args.beta2,
-                        args.beta3, args.beta11, args.beta22, args.beta33)
+                        args.beta3, args.beta11, args.beta22, args.beta33,args.lambdaA, args.lambdaB)
         # to be appended by run_id
 
         self.use_cuda = args.cuda and torch.cuda.is_available()
