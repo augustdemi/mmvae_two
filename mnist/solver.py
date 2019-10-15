@@ -383,19 +383,22 @@ class Solver(object):
             mi_loss_POEB, tc_loss_POEB, dw_kl_loss_POEB, loss_kl_POEB = self.kl_loss(log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB)
             # loss_kl_POE
             loss_kl_POE = 0.5 * (loss_kl_POEA + loss_kl_POEB)
-            # loss_kl_infA_sB
-            mi_loss_A_sB, tc_loss_A_sB, dw_kl_loss_A_sB, loss_kl_infA_sB = self.kl_loss(log_pz_A_sB, log_qz_A_sB, log_prod_qzi_A_sB, log_q_zCx_A_sB)
-            # loss_kl_infB_sA
-            mi_loss_B_sA, tc_loss_B_sA, dw_kl_loss_B_sA, loss_kl_infB_sA = self.kl_loss(log_pz_B_sA, log_qz_B_sA, log_prod_qzi_B_sA, log_q_zCx_B_sA)
 
             loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
-
 
             tc_loss = tc_loss_A + tc_loss_B + 0.5 * (tc_loss_POEA + tc_loss_POEB)
             mi_loss = mi_loss_A + mi_loss_B + 0.5 * (mi_loss_POEA + mi_loss_POEB)
             dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B + 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB)
 
             if self.cross_loss:
+                # loss_kl_infA_sB
+                mi_loss_A_sB, tc_loss_A_sB, dw_kl_loss_A_sB, loss_kl_infA_sB = self.kl_loss(log_pz_A_sB, log_qz_A_sB,
+                                                                                            log_prod_qzi_A_sB,
+                                                                                            log_q_zCx_A_sB)
+                # loss_kl_infB_sA
+                mi_loss_B_sA, tc_loss_B_sA, dw_kl_loss_B_sA, loss_kl_infB_sA = self.kl_loss(log_pz_B_sA, log_qz_B_sA,
+                                                                                            log_prod_qzi_B_sA,
+                                                                                            log_q_zCx_B_sA)
                 loss_kl += loss_kl_infA_sB + loss_kl_infB_sA
                 tc_loss += tc_loss_A_sB + tc_loss_B_sA
                 mi_loss += mi_loss_A_sB + mi_loss_B_sA
