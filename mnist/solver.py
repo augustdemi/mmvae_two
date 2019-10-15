@@ -91,7 +91,8 @@ class Solver(object):
                 'tc_loss_POEA', 'mi_loss_POEA', 'dw_kl_loss_POEA',
                 'tc_loss_POEB', 'mi_loss_POEB', 'dw_kl_loss_POEB',
                 'marginal_ll_A_infA', 'marginal_ll_A_poe', 'marginal_ll_A_pAsB', 'acc_infB', 'acc_POE', 'acc_sinfA',
-                'marginal_ll_A_infA_te', 'marginal_ll_A_poe_te', 'marginal_ll_A_pAsB_te', 'acc_infB_te', 'acc_POE_te', 'acc_sinfA_te'
+                'marginal_ll_A_infA_te', 'marginal_ll_A_poe_te', 'marginal_ll_A_pAsB_te', 'acc_infB_te', 'acc_POE_te', 'acc_sinfA_te',
+                'acc_infA', 'acc_infA_te'
             )
 
             # if self.eval_metrics:
@@ -200,6 +201,7 @@ class Solver(object):
         else:
             dset = DIGIT('./data', train=True, aug=self.aug)
         self.data_loader = torch.utils.data.DataLoader(dset, batch_size=self.batch_size, shuffle=True)
+        # self.data_loader.dataset.__getitem__(idx)[0:3]
 
         test_dset = digit('./data', train=False, aug=self.aug)
         self.test_data_loader = torch.utils.data.DataLoader(test_dset, batch_size=self.batch_size, shuffle=True)
@@ -435,6 +437,7 @@ class Solver(object):
                 self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
                 # self.save_traverse(iteration, z_A, z_B)
                 self.save_traverseA(iteration)
+                self.save_traverseA(iteration, train=False)
                 # self.save_traverse(iteration, z_A, z_B, train=False)
 
             # if iteration % self.eval_metrics_iter == 0:
@@ -446,26 +449,26 @@ class Solver(object):
 
             # (visdom) insert current line stats
             if self.viz_on and (iteration % self.viz_ll_iter == 0):
-                # z_A, z_B = self.get_stat()
+                z_A, z_B, z_AS, z_BS, z_S = self.get_stat()
 
-                marginal_ll_A_infA, marginal_ll_A_poe, marginal_ll_A_pAsB, acc_infB, acc_POE, acc_sinfA = self.get_loglikelihood()
-                marginal_ll_A_infA_te, marginal_ll_A_poe_te, marginal_ll_A_pAsB_te, acc_infB_te, acc_POE_te, acc_sinfA_te = self.get_loglikelihood(train=False)
+                marginal_ll_A_infA, marginal_ll_A_poe, marginal_ll_A_pAsB, acc_infB, acc_POE, acc_sinfA, acc_infA = self.get_loglikelihood(z_B)
+                marginal_ll_A_infA_te, marginal_ll_A_poe_te, marginal_ll_A_pAsB_te, acc_infB_te, acc_POE_te, acc_sinfA_te, acc_infA_te = self.get_loglikelihood(z_B, train=False)
 
                 prn_str = ( \
                                     '[iter %d (epoch %d)]\n' + \
                                     '    marginal_ll_A_infA = %.3f, marginal_ll_A_poe = %.3f, marginal_ll_A_pAsB = %.3f\n' + \
                                     '    marginal_ll_A_infA_te = %.3f, marginal_ll_A_poe_te = %.3f, marginal_ll_A_pAsB_te = %.3f\n' + \
-                                    '    acc_infB = %.3f, acc_POE = %.3f, acc_sinfA = %.3f\n' + \
-                                      '    acc_infB_te = %.3f, acc_POE_te = %.3f, acc_sinfA_te = %.3f]'
+                                    '    acc_infB = %.3f, acc_POE = %.3f, acc_sinfA = %.3f, acc_infA = %.3f\n' + \
+                                      '    acc_infB_te = %.3f, acc_POE_te = %.3f, acc_sinfA_te = %.3f, acc_infA_te = %.3f]'
                               ) % \
                           (iteration, epoch,
                            marginal_ll_A_infA.item(), marginal_ll_A_poe.item(), marginal_ll_A_pAsB.item(),
                            marginal_ll_A_infA_te.item(), marginal_ll_A_poe_te.item(), marginal_ll_A_pAsB_te.item(),
-                           acc_infB.item(), acc_POE.item(), acc_sinfA.item(),
-                           acc_infB_te.item(), acc_POE_te.item(), acc_sinfA_te.item()
+                           acc_infB.item(), acc_POE.item(), acc_sinfA.item(), acc_infA.item(),
+                           acc_infB_te.item(), acc_POE_te.item(), acc_sinfA_te.item(), acc_infA_te.item()
                            )
                 print(prn_str)
-                print('===========================================================')
+                print('======================================================================================================')
 
                 self.line_gather.insert(iter=iteration,
                                         recon_both=loss_recon_POE.item(),
@@ -495,12 +498,14 @@ class Solver(object):
                                         acc_infB=acc_infB.item(),
                                         acc_POE=acc_POE.item(),
                                         acc_sinfA=acc_sinfA.item(),
+                                        acc_infA=acc_infA.item(),
                                         marginal_ll_A_infA_te=marginal_ll_A_infA_te.item(),
                                         marginal_ll_A_poe_te=marginal_ll_A_poe_te.item(),
                                         marginal_ll_A_pAsB_te=marginal_ll_A_pAsB_te.item(),
                                         acc_infB_te=acc_infB_te.item(),
                                         acc_POE_te=acc_POE_te.item(),
                                         acc_sinfA_te=acc_sinfA_te.item(),
+                                        acc_infA_te=acc_infA_te.item(),
                                         )
 
 
@@ -784,7 +789,7 @@ class Solver(object):
 
 
 
-    def get_loglikelihood(self, train=True):
+    def get_loglikelihood(self, z_B_stat, train=True):
         self.set_mode(train=False)
         mkdirs(self.output_dir_recon)
         np.random.seed(0)
@@ -879,15 +884,27 @@ class Solver(object):
         XA_sinfB_recon = torch.sigmoid(self.decoderA(ZA_infA, ZS_infB)).view(XA.shape[0], -1, 28, 28)
         XB_sinfA_recon = self.decoderB(ZB_infB, ZS_infA)
 
+
+        #cross synth
+        ZB = torch.randn(batch_size, self.zB_dim)
+        z_B_stat = np.array(z_B_stat)
+        z_B_stat_mean = np.mean(z_B_stat, 0)
+        ZB = ZB + torch.Tensor(z_B_stat_mean)
+        if self.use_cuda:
+            ZB = ZB.cuda()
+        XB_synth = self.decoderB(ZB, ZS_infA)
+
+
         acc_infB = ((XB_infB_recon.argmax(dim=1) == XB).sum() / torch.FloatTensor([batch_size]))[0]
         acc_POE = ((XB_POE_recon.argmax(dim=1) == XB).sum() / torch.FloatTensor([batch_size]))[0]
         acc_sinfA = ((XB_sinfA_recon.argmax(dim=1) == XB).sum() / torch.FloatTensor([batch_size]))[0]
+        acc_infA = ((XB_synth.argmax(dim=1) == XB).sum() / torch.FloatTensor([batch_size]))[0]
 
         marginal_ll_A_infA = self.marginal_loglikelihood(XA, XA_infA_recon, ZA_infA, ZS_infA, muA_infA, logvarA_infA, relaxedCategA)
         marginal_ll_A_poe = self.marginal_loglikelihood(XA, XA_POE_recon, ZA_infA, ZS_POE, muA_infA, logvarA_infA, relaxedCategS)
         marginal_ll_A_pAsB = self.marginal_loglikelihood(XA, XA_sinfB_recon, ZA_infA, ZS_infB, muA_infA, logvarA_infA, relaxedCategB)
         self.set_mode(train=True)
-        return marginal_ll_A_infA, marginal_ll_A_poe, marginal_ll_A_pAsB, acc_infB, acc_POE, acc_sinfA
+        return marginal_ll_A_infA, marginal_ll_A_poe, marginal_ll_A_pAsB, acc_infB, acc_POE, acc_sinfA, acc_infA
 
 
     def save_recon(self, iters, train=True):
@@ -897,25 +914,9 @@ class Solver(object):
 
         if train:
             data_loader = self.data_loader
-            if self.categ:
-                #msnit
-                if self.aug:
-                    fixed_idxs = []
-                    for i in range(10):
-                        fixed_idxs.append(i*36000000 + 10010000)
-                else:
-                    fixed_idxs = []
-                    for i in range(10):
-                        fixed_idxs.append(5800 * i + 2005)
-            else:
-                if self.aug:
-                    fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
-                else:
-                    fixed_idxs = []
-                    np.random.seed(0)
-                    for i in range(60):
-                        fixed_idxs.append(550 * 2 * i + np.random.randint(549))
-                print(fixed_idxs)
+            fixed_idxs = []
+            for i in range(10):
+                fixed_idxs.append(5800 * i + 2005)
             out_dir = os.path.join(self.output_dir_recon, 'train')
         else:
             data_loader = self.test_data_loader
@@ -942,7 +943,6 @@ class Solver(object):
         XA = torch.stack(XA)
         XB = torch.stack(XB)
         batch_size = XA.shape[0]
-
         if self.categ:
             muA_infA, stdA_infA, logvarA_infA, cate_prob_infA = self.encoderA(XA)
             # zB, zS = encB(xB)
@@ -1069,44 +1069,23 @@ class Solver(object):
 
         if train:
             data_loader = self.data_loader
-            if self.categ:
-                if self.aug:
-                    fixed_idxs = []
-                    for i in range(10):
-                        fixed_idxs.append(i*36000000 + 10010000)
-                else:
-                    fixed_idxs = []
-                    for i in range(10):
-                        fixed_idxs.append(5800 * i + 2005)
-            else:
-                if self.aug:
-                    fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
-                else:
-                    fixed_idxs = []
-                    np.random.seed(0)
-                    for i in range(60):
-                        fixed_idxs.append(550 * 2 * i + np.random.randint(549))
-                print(fixed_idxs)
+            fixed_idxs = [1, 3, 5, 7, 2, 11, 13, 15, 17, 19]
         else:
             data_loader = self.test_data_loader
-            fixed_idxs = [2, 982, 2300, 3400, 4500, 5500, 6500, 7500, 8500, 9500]
+            fixed_idxs = [3, 2, 1, 18, 4, 15, 11, 17, 61, 99]
+
 
         fixed_XA = [0] * len(fixed_idxs)
         fixed_XB = [0] * len(fixed_idxs)
         label = [0] * len(fixed_idxs)
-
         for i, idx in enumerate(fixed_idxs):
-
             fixed_XA[i], fixed_XB[i], label[i] = \
                 data_loader.dataset.__getitem__(idx)[0:3]
-
             if self.use_cuda:
                 fixed_XA[i] = fixed_XA[i].cuda()
                 fixed_XB[i] = fixed_XB[i].cuda()
-
         fixed_XA = torch.stack(fixed_XA)
         fixed_XB = torch.stack(fixed_XB)
-        # label = torch.LongTensor(label)
         if self.use_cuda:
             label = label.cuda()
 
@@ -1131,31 +1110,14 @@ class Solver(object):
 
         # mkdirs(os.path.join(self.output_dir_synth, str(iters)))
 
-
-        WS = torch.ones(fixed_XA.shape)
-        if self.use_cuda:
-            WS = WS.cuda()
-
         n = len(fixed_idxs)
-
-        perm = torch.arange(0, (howmany + 2) * n).view(howmany + 2, n).transpose(1, 0)
-        perm = perm.contiguous().view(-1)
 
         ######## 1) generate xB from given xA (A2B) ########
 
-        merged = torch.cat([fixed_XA], dim=0)
         XB_synth_list = []
         label_list = []
 
         for k in range(howmany):
-            # z_B_stat = np.array(z_B_stat)
-            # z_B_stat_mean = np.mean(z_B_stat, 0)
-            # ZB = torch.Tensor(z_B_stat_mean)
-            # ZB_list = []
-            # for _ in range(n):
-            #     ZB_list.append(ZB)
-            # ZB = torch.stack(ZB_list)
-
             ZB = torch.randn(n, self.zB_dim)
             z_B_stat = np.array(z_B_stat)
             z_B_stat_mean = np.mean(z_B_stat, 0)
@@ -1170,12 +1132,12 @@ class Solver(object):
         if train:
             fname = os.path.join(
                 self.output_dir_synth,
-                'synth_cross_modal_B2A_%s.txt' % iters
+                'synth_cross_modal_A2B_%s.txt' % iters
             )
         else:
             fname = os.path.join(
                 self.output_dir_synth,
-                'eval_synth_cross_modal_B2A_%s.txt' % iters
+                'eval_synth_cross_modal_A2B_%s.txt' % iters
             )
         mkdirs(self.output_dir_synth)
         file1 = open(fname, "w")
@@ -1184,23 +1146,19 @@ class Solver(object):
         acc = np.round((np.array(XB_synth_list).argmax(1) == label_list).sum() / len(label_list), 2)
         file1.write(str(acc))
         file1.close()
-        # XB_synth_list = torch.stack(XB_synth_list)
-        # label_list = torch.LongTensor(label_list)
-        # acc_synB = (XB_synth_list.argmax(dim=1) == label_list).sum().data.numpy() / len(fixed_idxs)
+
 
         ######## 2) generate xA from given xB (B2A) ########
+        WS = torch.ones(fixed_XA.shape)
+        if self.use_cuda:
+            WS = WS.cuda()
+
+        perm = torch.arange(0, (howmany + 2) * n).view(howmany + 2, n).transpose(1, 0)
+        perm = perm.contiguous().view(-1)
+
         merged = torch.cat([fixed_XA], dim=0)
         XA_synth_list = []
         for k in range(howmany):
-            # z_A_stat = np.array(z_A_stat)
-            # z_A_stat_mean = np.mean(z_A_stat, 0)
-            # ZA = torch.Tensor(z_A_stat_mean)
-            # ZA_list = []
-            # ZA_list = []
-            # for _ in range(n):
-            #     ZA_list.append(ZA)
-            # ZA = torch.stack(ZA_list)
-
             ZA = torch.randn(n, self.zA_dim)
             z_A_stat = np.array(z_A_stat)
             z_A_stat_mean = np.mean(z_A_stat, 0)
@@ -1398,7 +1356,7 @@ class Solver(object):
         return z_A, z_B, z_AS, z_BS, z_S
 
 
-    def save_traverseA(self, iters, loc=-1):
+    def save_traverseA(self, iters, loc=-1, train=True):
 
         self.set_mode(train=False)
 
@@ -1408,21 +1366,32 @@ class Solver(object):
 
         if self.record_file:
             ####
-            fixed_idxs = []
-            for i in range(10):
-                fixed_idxs.append(5800 * i + 2005)
+            if train:
+                data_loader = self.data_loader
+                fixed_idxs = [1,3,5,7,2,11,13,15,17,19]
+                out_dir = os.path.join(self.output_dir_trvsl, str(iters), 'trainA')
+            else:
+                data_loader = self.test_data_loader
+                fixed_idxs = [3,2,1,18,4,15,11,17,61,99]
+                out_dir = os.path.join(self.output_dir_trvsl, str(iters), 'testA')
 
             fixed_XA = [0] * len(fixed_idxs)
+            label = [0] * len(fixed_idxs)
 
             for i, idx in enumerate(fixed_idxs):
 
-                fixed_XA[i], _ = \
-                    self.data_loader.dataset.__getitem__(idx)[0:2]
+                fixed_XA[i], _, label[i] = \
+                    data_loader.dataset.__getitem__(idx)[0:3]
                 if self.use_cuda:
                     fixed_XA[i] = fixed_XA[i].cuda()
                 fixed_XA[i] = fixed_XA[i].unsqueeze(0)
 
             fixed_XA = torch.cat(fixed_XA, dim=0)
+            # cnt = [0] * 10
+            # for l in label:
+            #     cnt[l] += 1
+            # print('cnt of digit:')
+            # print(cnt)
 
             fixed_zmuA, _, _, cate_prob_infA = encoderA(fixed_XA)
 
@@ -1474,7 +1443,7 @@ class Solver(object):
 
 
         # save the generated files, also the animated gifs
-        out_dir = os.path.join(self.output_dir_trvsl, str(iters), 'trainA')
+
         mkdirs(self.output_dir_trvsl)
         mkdirs(out_dir)
 
@@ -1859,12 +1828,14 @@ class Solver(object):
         acc_infB = torch.Tensor(data['acc_infB'])
         acc_POE = torch.Tensor(data['acc_POE'])
         acc_sinfA = torch.Tensor(data['acc_sinfA'])
+        acc_infA = torch.Tensor(data['acc_infA'])
         marginal_ll_A_infA_te = torch.Tensor(data['marginal_ll_A_infA_te'])
         marginal_ll_A_poe_te = torch.Tensor(data['marginal_ll_A_poe_te'])
         marginal_ll_A_pAsB_te = torch.Tensor(data['marginal_ll_A_pAsB_te'])
         acc_infB_te = torch.Tensor(data['acc_infB_te'])
         acc_POE_te = torch.Tensor(data['acc_POE_te'])
         acc_sinfA_te = torch.Tensor(data['acc_sinfA_te'])
+        acc_infA_te = torch.Tensor(data['acc_infA_te'])
 
         recons = torch.stack(
             [recon_both.detach(), recon_A.detach(), recon_B.detach()], -1
@@ -1885,7 +1856,7 @@ class Solver(object):
         )
 
         acc = torch.stack(
-            [acc_infB.detach(), acc_POE.detach(), acc_sinfA.detach()], -1
+            [acc_infB.detach(), acc_POE.detach(), acc_sinfA.detach(), acc_infA.detach()], -1
         )
 
         mgll = torch.stack(
@@ -1893,7 +1864,7 @@ class Solver(object):
         )
 
         acc_te = torch.stack(
-            [acc_infB_te.detach(), acc_POE_te.detach(), acc_sinfA_te.detach()], -1
+            [acc_infB_te.detach(), acc_POE_te.detach(), acc_sinfA_te.detach(), acc_infA_te.detach()], -1
         )
 
         mgll_te = torch.stack(
@@ -1937,13 +1908,13 @@ class Solver(object):
             X=iters, Y=acc, env=self.name + '/lines',
             win=self.win_id['acc'], update='append',
             opts=dict(xlabel='iter', ylabel='acc',
-            title = 'Accuracy of modalB', legend = ['acc_infB', 'acc_POE', 'acc_sinfA']),
+            title = 'Accuracy of modalB', legend = ['acc_infB', 'acc_POE', 'acc_sinfA', 'acc_infA']),
         )
         self.viz.line(
             X=iters, Y=acc_te, env=self.name + '/lines',
             win=self.win_id['acc_te'], update='append',
             opts=dict(xlabel='iter', ylabel='acc_te',
-            title = 'Accuracy of modalB test set', legend = ['acc_infB_te', 'acc_POE_te', 'acc_sinfA_te']),
+            title = 'Accuracy of modalB test set', legend = ['acc_infB_te', 'acc_POE_te', 'acc_sinfA_te', 'acc_sinfA']),
         )
         self.viz.line(
             X=iters, Y=mgll, env=self.name + '/lines',
