@@ -1153,7 +1153,7 @@ class Solver(object):
         file1 = open(fname, "w")
         for i in range(len(XB_synth_list)):
             file1.write('Text (%d): %s\n' % (label_list[i], XB_synth_list[i].argmax()))
-        acc = np.round((XB_synth_list.argmax(1) == label_list).sum() / torch.FloatTensor([label_list.shape[0]])[0], 2)
+        acc = (XB_synth_list.argmax(1) == label_list).sum() / torch.FloatTensor([label_list.shape[0]])[0]
 
         file1.write(str(acc))
         file1.close()
