@@ -436,8 +436,8 @@ class Solver(object):
                     print('interpolationBS: ', np.min(np.array(z_BS)), np.max(np.array(z_BS)))
                     print('interpolationS: ', np.min(np.array(z_S)), np.max(np.array(z_S)))
                 # 1) save the recon images
-                # self.save_recon(iteration)
-                # self.save_recon(iteration, train=False)
+                self.save_recon(iteration)
+                self.save_recon(iteration, train=False)
 
                 self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
                 self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
