@@ -71,6 +71,7 @@ class Solver(object):
         self.beta22 = args.beta22
         self.beta33 = args.beta33
         self.is_mss = args.is_mss
+        self.cross_loss = args.cross_loss
 
         self.lambdaA = args.lambdaA
         self.lambdaB = args.lambdaB
