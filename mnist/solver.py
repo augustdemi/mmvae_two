@@ -190,6 +190,22 @@ class Solver(object):
 
 
     ####
+    def kl_loss(self, log_pz, log_qz, log_prod_qzi, log_q_zCx):
+        mi_loss = (log_q_zCx - log_qz).mean()
+        tc_loss = (log_qz - log_prod_qzi).sum(dim=0).div(self.batch_size)
+        dw_kl_loss = (log_prod_qzi - log_pz).mean()
+        loss_kl_infA = self.beta1 * mi_loss + self.beta2 * tc_loss + self.beta3 * dw_kl_loss
+        return mi_loss, tc_loss, dw_kl_loss, loss_kl_infA
+
+    def log_prob(self, z_private, z_shared, mu, logvar, relaxedCateg, train=True):
+        if train:
+            n_data = len(self.data_loader.dataset)
+        else:
+            n_data = len(self.test_data_loader.dataset)
+        log_pz, log_qz, log_prod_qzi, log_q_zCx, _ = get_log_pz_qz_prodzi_qzCx(
+            {'cont': z_private, 'disc': z_shared}, {'cont': (mu, logvar), 'disc': relaxedCateg}, n_data, is_mss=self.is_mss)
+        return log_pz, log_qz, log_prod_qzi, log_q_zCx
+
     def train(self):
 
         self.set_mode(train=True)
@@ -297,42 +313,40 @@ class Solver(object):
 
             #### For all cate_prob_infA(statiscts), total 64, get log_prob_ZS_infB2 for each of ZS_infB2(sample) ==> 64*64. marig. out for q_z for MI
 
-            # reconstructed samples (given joint modal observation)
-            XA_POE_recon = self.decoderA(ZA_infA, ZS_POE)
-            XB_POE_recon = self.decoderB(ZB_infB, ZS_POE)
 
-            # reconstructed samples (given single modal observation)
+            # one modal
             XA_infA_recon = self.decoderA(ZA_infA, ZS_infA)
             XB_infB_recon = self.decoderB(ZB_infB, ZS_infB)
+            # POE
+            XA_POE_recon = self.decoderA(ZA_infA, ZS_POE)
+            XB_POE_recon = self.decoderB(ZB_infB, ZS_POE)
+            # cross shared
+            XA_sinfB_recon = self.decoderA(ZA_infA, ZS_infB)
+            XB_sinfA_recon = self.decoderB(ZB_infB, ZS_infA)
 
+            # one modal
             loss_recon_infA = reconstruction_loss(XA, torch.sigmoid(XA_infA_recon).view(XA.shape[0],-1,28,28), distribution="bernoulli")
             loss_recon_infB = cross_entropy_label(XB_infB_recon, XB)
-            #
+            # POE
             loss_recon_POE = \
                 self.lambdaA * reconstruction_loss(XA, torch.sigmoid(XA_POE_recon).view(XA.shape[0],-1,28,28), distribution="bernoulli") + \
                 self.lambdaB * cross_entropy_label(XB_POE_recon, XB)
+            # cross shared
+            loss_reconA_sinfB = reconstruction_loss(XA, torch.sigmoid(XA_sinfB_recon).view(XA.shape[0],-1,28,28), distribution="bernoulli")
+            loss_reconB_sinfA = cross_entropy_label(XB_sinfA_recon, XB)
+            loss_cross = self.lambdaA * loss_reconA_sinfB + self.lambdaB * loss_reconB_sinfA
 
-            loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB + loss_recon_POE
+            loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB + loss_recon_POE + loss_cross
 
             #================================== decomposed KL ========================================
 
             if self.categ:
-                log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_infA}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategA},
-                                                                                    len(self.data_loader.dataset),
-                                                                                    is_mss=self.is_mss)
-
-
-                log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_infB}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategB},
-                                                                                    len(self.data_loader.dataset),
-                                                                                    is_mss=self.is_mss)
-
-                log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZA_infA, 'disc': ZS_POE}, {'cont': (muA_infA, logvarA_infA), 'disc': relaxedCategS},
-                                                                                    len(self.data_loader.dataset),
-                                                                                    is_mss=self.is_mss)
-
-                log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB, _ = get_log_pz_qz_prodzi_qzCx({'cont': ZB_infB, 'disc': ZS_POE}, {'cont': (muB_infB, logvarB_infB), 'disc': relaxedCategS},
-                                                                                    len(self.data_loader.dataset),
-                                                                                    is_mss=self.is_mss)
+                log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A = self.log_prob(ZA_infA, ZS_infA, muA_infA, logvarA_infA, relaxedCategA)
+                log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B = self.log_prob(ZB_infB, ZS_infB, muB_infB, logvarB_infB, relaxedCategB)
+                log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA = self.log_prob(ZA_infA, ZS_POE, muA_infA, logvarA_infA, relaxedCategS)
+                log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB = self.log_prob(ZB_infB, ZS_POE, muB_infB, logvarB_infB, relaxedCategS)
+                log_pz_A_sB, log_qz_A_sB, log_prod_qzi_A_sB, log_q_zCx_A_sB = self.log_prob(ZA_infA, ZS_infB, muA_infA, logvarA_infA, relaxedCategB)
+                log_pz_B_sA, log_qz_B_sA, log_prod_qzi_B_sA, log_q_zCx_B_sA = self.log_prob(ZB_infB, ZS_infA, muB_infB, logvarB_infB, relaxedCategA)
             else:
                 log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A, _ = get_log_pz_qz_prodzi_qzCx(
                     {'cont':  torch.cat((ZA_infA, ZS_infA), dim=1)}, {'cont': (torch.cat((muA_infA, muS_infA), dim=1),  torch.cat((logvarA_infA, logvarS_infA), dim=1))},
@@ -354,33 +368,25 @@ class Solver(object):
                     len(self.data_loader.dataset),
                     is_mss=self.is_mss)
             # loss_kl_infA
-            mi_loss_A = (log_q_zCx_A - log_qz_A).mean()
-            tc_loss_A = (log_qz_A - log_prod_qzi_A).sum(dim=0).div(self.batch_size)
-            dw_kl_loss_A = (log_prod_qzi_A - log_pz_A).mean()
-            loss_kl_infA = self.beta1 * mi_loss_A + self.beta2 * tc_loss_A + self.beta3 * dw_kl_loss_A
+            mi_loss_A, tc_loss_A, dw_kl_loss_A, loss_kl_infA = self.kl_loss(log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A)
             # loss_kl_infB
-            mi_loss_B = (log_q_zCx_B - log_qz_B).mean()
-            tc_loss_B = (log_qz_B - log_prod_qzi_B).sum(dim=0).div(self.batch_size)
-            dw_kl_loss_B = (log_prod_qzi_B - log_pz_B).mean()
-            loss_kl_infB = self.beta11 * mi_loss_B + self.beta22 * tc_loss_B + self.beta33 * dw_kl_loss_B
+            mi_loss_B, tc_loss_B, dw_kl_loss_B, loss_kl_infB = self.kl_loss(log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B)
             # loss_kl_POEA
-            mi_loss_POEA = (log_q_zCx_POEA - log_qz_POEA).mean()
-            tc_loss_POEA = (log_qz_POEA - log_prod_qzi_POEA).sum(dim=0).div(self.batch_size)
-            dw_kl_loss_POEA = (log_prod_qzi_POEA - log_pz_POEA).mean()
-            loss_kl_POEA = self.beta1 * mi_loss_POEA + self.beta2 * tc_loss_POEA + self.beta3 * dw_kl_loss_POEA
+            mi_loss_POEA, tc_loss_POEA, dw_kl_loss_POEA, loss_kl_POEA = self.kl_loss(log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA)
             # loss_kl_POEB
-            mi_loss_POEB = (log_q_zCx_POEB - log_qz_POEB).mean()
-            tc_loss_POEB = (log_qz_POEB - log_prod_qzi_POEB).sum(dim=0).div(self.batch_size)
-            dw_kl_loss_POEB = (log_prod_qzi_POEB - log_pz_POEB).mean()
-            loss_kl_POEB = self.beta11 * mi_loss_POEB + self.beta22 * tc_loss_POEB + self.beta33 * dw_kl_loss_POEB
+            mi_loss_POEB, tc_loss_POEB, dw_kl_loss_POEB, loss_kl_POEB = self.kl_loss(log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB)
             # loss_kl_POE
             loss_kl_POE = 0.5 * (loss_kl_POEA + loss_kl_POEB)
+            # loss_kl_infA_sB
+            mi_loss_A_sB, tc_loss_A_sB, dw_kl_loss_A_sB, loss_kl_infA_sB = self.kl_loss(log_pz_A_sB, log_qz_A_sB, log_prod_qzi_A_sB, log_q_zCx_A_sB)
+            # loss_kl_infB_sA
+            mi_loss_B_sA, tc_loss_B_sA, dw_kl_loss_B_sA, loss_kl_infB_sA = self.kl_loss(log_pz_B_sA, log_qz_B_sA, log_prod_qzi_B_sA, log_q_zCx_B_sA)
 
-            loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
+            loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE + loss_kl_infA_sB + loss_kl_infB_sA
 
-            tc_loss = tc_loss_A + tc_loss_B + 0.5 * (tc_loss_POEA + tc_loss_POEB)
-            mi_loss = mi_loss_A + mi_loss_B + 0.5 * (mi_loss_POEA + mi_loss_POEB)
-            dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B + 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB)
+            tc_loss = tc_loss_A + tc_loss_B + 0.5 * (tc_loss_POEA + tc_loss_POEB) + tc_loss_A_sB + tc_loss_B_sA
+            mi_loss = mi_loss_A + mi_loss_B + 0.5 * (mi_loss_POEA + mi_loss_POEB) + mi_loss_A_sB + mi_loss_B_sA
+            dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B + 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB) + dw_kl_loss_A_sB + dw_kl_loss_B_sA
 
             ################## total loss for vae ####################
             vae_loss = loss_recon + loss_kl
@@ -795,7 +801,7 @@ class Solver(object):
         np.random.seed(0)
         if train:
             data_loader = self.data_loader
-            fixed_idxs = np.random.randint(59999, size=6000)
+            fixed_idxs = np.random.randint(59999, size=600)
         else:
             data_loader = self.test_data_loader
             fixed_idxs = np.random.randint(5999, size=600)
