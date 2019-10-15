@@ -62,7 +62,7 @@ class digit(Dataset):
         a_data = transform(self.data['imgs'][index].numpy())
         b_data = self.data['labels'][index]
 
-        return a_data, b_data, self.data['labels'][index].numpy(), index
+        return a_data, b_data, self.data['labels'][index], index
 
     def __len__(self):
         # return self.input_a.size(0)

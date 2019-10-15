@@ -436,8 +436,8 @@ class Solver(object):
                     print('interpolationBS: ', np.min(np.array(z_BS)), np.max(np.array(z_BS)))
                     print('interpolationS: ', np.min(np.array(z_S)), np.max(np.array(z_S)))
                 # 1) save the recon images
-                self.save_recon(iteration)
-                self.save_recon(iteration, train=False)
+                # self.save_recon(iteration)
+                # self.save_recon(iteration, train=False)
 
                 self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
                 self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
@@ -1087,11 +1087,13 @@ class Solver(object):
         for i, idx in enumerate(fixed_idxs):
             fixed_XA[i], fixed_XB[i], label[i] = \
                 data_loader.dataset.__getitem__(idx)[0:3]
+
             if self.use_cuda:
                 fixed_XA[i] = fixed_XA[i].cuda()
                 fixed_XB[i] = fixed_XB[i].cuda()
         fixed_XA = torch.stack(fixed_XA)
         fixed_XB = torch.stack(fixed_XB)
+        label = torch.LongTensor(label)
         if self.use_cuda:
             label = label.cuda()
 
@@ -1132,8 +1134,10 @@ class Solver(object):
             if self.use_cuda:
                 ZB = ZB.cuda()
             XB_synth = decoderB(ZB, ZS_infA)  # given XA
-            XB_synth_list.extend(XB_synth.data.numpy())
+            XB_synth_list.extend(XB_synth)
             label_list.extend(label)
+        XB_synth_list = torch.stack(XB_synth_list)
+        label_list = torch.stack(label_list)
 
         if train:
             fname = os.path.join(
@@ -1149,7 +1153,8 @@ class Solver(object):
         file1 = open(fname, "w")
         for i in range(len(XB_synth_list)):
             file1.write('Text (%d): %s\n' % (label_list[i], XB_synth_list[i].argmax()))
-        acc = np.round((np.array(XB_synth_list).argmax(1) == label_list).sum() / len(label_list), 2)
+        acc = np.round((XB_synth_list.argmax(1) == label_list).sum() / torch.FloatTensor([label_list.shape[0]])[0], 2)
+
         file1.write(str(acc))
         file1.close()
 
@@ -1382,23 +1387,16 @@ class Solver(object):
                 out_dir = os.path.join(self.output_dir_trvsl, str(iters), 'testA')
 
             fixed_XA = [0] * len(fixed_idxs)
-            label = [0] * len(fixed_idxs)
 
             for i, idx in enumerate(fixed_idxs):
 
-                fixed_XA[i], _, label[i] = \
+                fixed_XA[i], _, _ = \
                     data_loader.dataset.__getitem__(idx)[0:3]
                 if self.use_cuda:
                     fixed_XA[i] = fixed_XA[i].cuda()
                 fixed_XA[i] = fixed_XA[i].unsqueeze(0)
 
             fixed_XA = torch.cat(fixed_XA, dim=0)
-            # cnt = [0] * 10
-            # for l in label:
-            #     cnt[l] += 1
-            # print('cnt of digit:')
-            # print(cnt)
-
             fixed_zmuA, _, _, cate_prob_infA = encoderA(fixed_XA)
 
             # fixed_zS = sample_gumbel_softmax(self.use_cuda, fixed_cate_probS, train=False)
