@@ -80,7 +80,7 @@ class Solver(object):
         self.viz_on = args.viz_on
         if self.viz_on:
             self.win_id = dict(
-                recon='win_recon', kl='win_kl', tc='win_tc', mi='win_mi', dw_kl='win_dw_kl'
+                recon='win_recon', kl='win_kl', tc='win_tc', mi='win_mi', dw_kl='win_dw_kl', acc='win_acc', mgll='win_mgll', acc_te='win_acc_te', mgll_te='win_mgll_te'
             )
             self.line_gather = DataGather(
                 'iter', 'recon_both', 'recon_A', 'recon_B',
@@ -89,7 +89,9 @@ class Solver(object):
                 'tc_loss_A', 'mi_loss_A', 'dw_kl_loss_A',
                 'tc_loss_B', 'mi_loss_B', 'dw_kl_loss_B',
                 'tc_loss_POEA', 'mi_loss_POEA', 'dw_kl_loss_POEA',
-                'tc_loss_POEB', 'mi_loss_POEB', 'dw_kl_loss_POEB'
+                'tc_loss_POEB', 'mi_loss_POEB', 'dw_kl_loss_POEB',
+                'marginal_ll_A_infA', 'marginal_ll_A_poe', 'marginal_ll_A_pAsB', 'acc_infB', 'acc_POE', 'acc_sinfA',
+                'marginal_ll_A_infA_te', 'marginal_ll_A_poe_te', 'marginal_ll_A_pAsB_te', 'acc_infB_te', 'acc_POE_te', 'acc_sinfA_te'
             )
 
             # if self.eval_metrics:
@@ -198,9 +200,10 @@ class Solver(object):
         else:
             dset = DIGIT('./data', train=True, aug=self.aug)
         self.data_loader = torch.utils.data.DataLoader(dset, batch_size=self.batch_size, shuffle=True)
-        # test_dset = Position('./data', train=False)
-        # self.test_data_loader = torch.utils.data.DataLoader(test_dset, batch_size=self.batch_size, shuffle=True)
-        self.test_data_loader = self.data_loader
+
+        test_dset = digit('./data', train=False, aug=self.aug)
+        self.test_data_loader = torch.utils.data.DataLoader(test_dset, batch_size=self.batch_size, shuffle=True)
+        # self.test_data_loader = self.data_loader
         self.N = len(self.data_loader.dataset)
         print('...done')
 
@@ -300,11 +303,8 @@ class Solver(object):
             XA_infA_recon = self.decoderA(ZA_infA, ZS_infA)
             XB_infB_recon = self.decoderB(ZB_infB, ZS_infB)
 
-            # loss_recon_infA = F.l1_loss(torch.sigmoid(XA_infA_recon), XA, reduction='sum').div(XA.size(0))
             loss_recon_infA = reconstruction_loss(XA, torch.sigmoid(XA_infA_recon).view(XA.shape[0],-1,28,28), distribution="bernoulli")
             loss_recon_infB = cross_entropy_label(XB_infB_recon, XB)
-
-
             #
             loss_recon_POE = \
                 self.lambdaA * reconstruction_loss(XA, torch.sigmoid(XA_POE_recon).view(XA.shape[0],-1,28,28), distribution="bernoulli") + \
@@ -428,21 +428,11 @@ class Solver(object):
                     print('interpolationBS: ', np.min(np.array(z_BS)), np.max(np.array(z_BS)))
                     print('interpolationS: ', np.min(np.array(z_S)), np.max(np.array(z_S)))
                 # 1) save the recon images
-
-
-                # 2) save the pure-synthesis images
-                # self.save_synth_pure( iteration, howmany=100 )
-                # 3) save the cross-modal-synthesis images
-
-
-                # 4) save the latent traversed images
-                # self.save_traverseA(iteration, z_A, z_B)
-                # self.save_traverseB(iteration, z_A, z_B)
-
                 self.save_recon(iteration)
-                # self.save_recon(iteration, train=False)
-                # self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
-                # self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
+                self.save_recon(iteration, train=False)
+
+                self.save_synth_cross_modal(iteration, z_A, z_B, howmany=3)
+                self.save_synth_cross_modal(iteration, z_A, z_B, train=False, howmany=3)
                 # self.save_traverse(iteration, z_A, z_B)
                 self.save_traverseA(iteration)
                 # self.save_traverse(iteration, z_A, z_B, train=False)
@@ -458,12 +448,24 @@ class Solver(object):
             if self.viz_on and (iteration % self.viz_ll_iter == 0):
                 # z_A, z_B = self.get_stat()
 
-                # print(">>>>>> Train ACC")
-                # (_, _, _, _, _, _) = self.acc_total(z_A, z_B, train=True, howmany=3)
+                marginal_ll_A_infA, marginal_ll_A_poe, marginal_ll_A_pAsB, acc_infB, acc_POE, acc_sinfA = self.get_loglikelihood()
+                marginal_ll_A_infA_te, marginal_ll_A_poe_te, marginal_ll_A_pAsB_te, acc_infB_te, acc_POE_te, acc_sinfA_te = self.get_loglikelihood(train=False)
 
-                # print(">>>>>> Test ACC")
-                # (synA_acc, synB_acc, poeA_acc, poeB_acc, infA_acc, infB_acc, acc_ZS_infA, acc_ZS_infB, acc_ZS_POE) \
-                #     = self.acc_total(z_A, z_B, train=False, howmany=3)
+                prn_str = ( \
+                                    '[iter %d (epoch %d)]\n' + \
+                                    '    marginal_ll_A_infA = %.3f, marginal_ll_A_poe = %.3f, marginal_ll_A_pAsB = %.3f\n' + \
+                                    '    marginal_ll_A_infA_te = %.3f, marginal_ll_A_poe_te = %.3f, marginal_ll_A_pAsB_te = %.3f\n' + \
+                                    '    acc_infB = %.3f, acc_POE = %.3f, acc_sinfA = %.3f\n' + \
+                                      '    acc_infB_te = %.3f, acc_POE_te = %.3f, acc_sinfA_te = %.3f]'
+                              ) % \
+                          (iteration, epoch,
+                           marginal_ll_A_infA.item(), marginal_ll_A_poe.item(), marginal_ll_A_pAsB.item(),
+                           marginal_ll_A_infA_te.item(), marginal_ll_A_poe_te.item(), marginal_ll_A_pAsB_te.item(),
+                           acc_infB.item(), acc_POE.item(), acc_sinfA.item(),
+                           acc_infB_te.item(), acc_POE_te.item(), acc_sinfA_te.item()
+                           )
+                print(prn_str)
+                print('===========================================================')
 
                 self.line_gather.insert(iter=iteration,
                                         recon_both=loss_recon_POE.item(),
@@ -487,6 +489,18 @@ class Solver(object):
                                         tc_loss_POEB=tc_loss_POEB.item(),
                                         mi_loss_POEB=mi_loss_POEB.item(),
                                         dw_kl_loss_POEB=dw_kl_loss_POEB.item(),
+                                        marginal_ll_A_infA=marginal_ll_A_infA.item(),
+                                        marginal_ll_A_poe=marginal_ll_A_poe.item(),
+                                        marginal_ll_A_pAsB=marginal_ll_A_pAsB.item(),
+                                        acc_infB=acc_infB.item(),
+                                        acc_POE=acc_POE.item(),
+                                        acc_sinfA=acc_sinfA.item(),
+                                        marginal_ll_A_infA_te=marginal_ll_A_infA_te.item(),
+                                        marginal_ll_A_poe_te=marginal_ll_A_poe_te.item(),
+                                        marginal_ll_A_pAsB_te=marginal_ll_A_pAsB_te.item(),
+                                        acc_infB_te=acc_infB_te.item(),
+                                        acc_POE_te=acc_POE_te.item(),
+                                        acc_sinfA_te=acc_sinfA_te.item(),
                                         )
 
 
@@ -759,103 +773,35 @@ class Solver(object):
 
         return metric2, C
 
+    def marginal_loglikelihood(self, X, X_recon, z_private, z_shared, mu, logvar, relaxedCateg):
+        log_pz, _, _, log_q_zCx, _ = get_log_pz_qz_prodzi_qzCx(
+            {'cont': z_private, 'disc': z_shared}, {'cont': (mu, logvar), 'disc': relaxedCateg},
+            len(self.data_loader.dataset),
+            is_mss=self.is_mss)
+        p_xCz = - reconstruction_loss(X, X_recon.view(X.shape[0],-1,28,28), distribution="bernoulli") * X.shape[0]
+        marginal_ll = (p_xCz + log_pz.sum() - log_q_zCx.sum()) / X.shape[0]
+        return marginal_ll
 
 
-    def check_acc(self, data, target, dataset='mnist', train=True):
-        device = torch.device("cuda" if self.use_cuda else "cpu")
-        model = Net().to(device)
-        print('loaded: ', dataset + "_cnn_dict.pt")
-        model.load_state_dict(torch.load(dataset + "_cnn_dict.pt"))
 
-        model.eval()
-        test_loss = 0
-        correct = 0
-        with torch.no_grad():
-            output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
-            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).sum().item()
-
-        test_loss /= len(target)
-
-        if train:
-            print('\n{} set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format('Train',
-                                                                                       test_loss, correct, len(target),
-                                                                                       100. * correct / len(target)))
-        else:
-            print('\n{} set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format('Test',
-                                                                                       test_loss, correct, len(target),
-                                                                                       100. * correct / len(target)))
-
-        pred = pred.resize(pred.size()[0])
-        paired = torch.stack((target, pred), dim=1)
-
-        temp = {}
-        for i in range(10):
-            temp.update({i: []})
-        for i in range(int(paired.size()[0])):
-            temp[int(paired[i][0])].append(paired[i])
-
-        for i in range(10):
-            one_paired = torch.stack(temp[i])
-            one_target = one_paired[:,0]
-            one_pred = one_paired[:,1]
-            corr = one_pred.eq(one_target.view_as(one_pred)).sum().item()
-            print('ACC of digit {}: {:.2f}'.format(i, corr / len(temp[i])) )
-        print('-------------------------------------------------')
-        return correct / len(target)
-
-    def save_recon(self, iters, train=True):
+    def get_loglikelihood(self, train=True):
         self.set_mode(train=False)
-
         mkdirs(self.output_dir_recon)
-
+        np.random.seed(0)
         if train:
             data_loader = self.data_loader
-            if self.categ:
-                #msnit
-                if self.aug:
-                    fixed_idxs = []
-                    for i in range(10):
-                        fixed_idxs.append(i*36000000 + 10010000)
-                else:
-                    fixed_idxs = []
-                    for i in range(10):
-                        fixed_idxs.append(5800 * i + 2005)
-                        fixed_idxs.append(5800 * i + 2006)
-                        fixed_idxs.append(5800 * i + 2007)
-
-                # a = []
-                # for i in range(10):
-                #     a.append(fixed_idxs[i] * fixed_idxs[i])
-                # fixed_idxs = a
-                # print(fixed_idxs)
-                # face
-            else:
-                if self.aug:
-                    fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
-                else:
-                    fixed_idxs = []
-                    np.random.seed(0)
-                    for i in range(60):
-                        fixed_idxs.append(550 * 2 * i + np.random.randint(549))
-                print(fixed_idxs)
-            out_dir = os.path.join(self.output_dir_recon, 'train')
+            fixed_idxs = np.random.randint(59999, size=6000)
         else:
             data_loader = self.test_data_loader
-            fixed_idxs = [2, 982, 2300, 3400, 4500, 5500, 6500, 7500, 8500, 9500]
-            out_dir = os.path.join(self.output_dir_recon, 'test')
+            fixed_idxs = np.random.randint(5999, size=600)
 
-        fixed_idxs60 = fixed_idxs
-        # for idx in fixed_idxs:
-        #     for i in range(6):
-        #         fixed_idxs60.append(idx + i)
+        fixed_idxs100 = fixed_idxs
 
-        XA = [0] * len(fixed_idxs60)
-        XB = [0] * len(fixed_idxs60)
-        label = [0] * len(fixed_idxs60)
+        XA = [0] * len(fixed_idxs100)
+        XB = [0] * len(fixed_idxs100)
+        label = [0] * len(fixed_idxs100)
 
-        for i, idx in enumerate(fixed_idxs60):
+        for i, idx in enumerate(fixed_idxs100):
             XA[i], XB[i], label[i] = \
                 data_loader.dataset.__getitem__(idx)[0:3]
 
@@ -865,6 +811,8 @@ class Solver(object):
 
         XA = torch.stack(XA)
         XB = torch.stack(XB)
+        batch_size = XA.shape[0]
+
         if self.categ:
             muA_infA, stdA_infA, logvarA_infA, cate_prob_infA = self.encoderA(XA)
             # zB, zS = encB(xB)
@@ -883,10 +831,139 @@ class Solver(object):
             ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
 
             # encoder samples (for cross-modal prediction)
+            Eps = 1e-12
+            # distribution
+            relaxedCategA = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infA + Eps))
+            relaxedCategB = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infB + Eps))
+            relaxedCategS = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_POE + Eps))
+
+            # sampling
+            log_ZS_infA = relaxedCategA.rsample()
+            ZS_infA = torch.exp(log_ZS_infA)
+            log_ZS_infB = relaxedCategB.rsample()
+            ZS_infB = torch.exp(log_ZS_infB)
+            log_ZS_POE = relaxedCategS.rsample()
+            ZS_POE = torch.exp(log_ZS_POE)
+            ZS_POE = torch.sqrt(ZS_POE)
+
+        else:
+            muA_infA, stdA_infA, logvarA_infA, \
+            muS_infA, stdS_infA, logvarS_infA = self.encoderA(XA)
+
+            # zB, zS = encB(xB)
+            muB_infB, stdB_infB, logvarB_infB, \
+            muS_infB, stdS_infB, logvarS_infB = self.encoderB(XB)
+
+            # zS = encAB(xA,xB) via POE
+            muS_POE, stdS_POE, logvarS_POE = apply_poe(
+                self.use_cuda, muS_infA, logvarS_infA, muS_infB, logvarS_infB,
+            )
+
+            # encoder samples (for training)
+            ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
+            ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
+            ZS_POE = sample_gaussian(self.use_cuda, muS_POE, stdS_POE)
+            # encoder samples (for cross-modal prediction)
+            ZS_infA = sample_gaussian(self.use_cuda, muS_infA, stdS_infA)
+            ZS_infB = sample_gaussian(self.use_cuda, muS_infB, stdS_infB)
+
+        # reconstructed samples (given joint modal observation)
+        XA_POE_recon = torch.sigmoid(self.decoderA(ZA_infA, ZS_POE)).view(XA.shape[0],-1,28,28)
+        XB_POE_recon = self.decoderB(ZB_infB, ZS_POE)
+
+        # reconstructed samples (given single modal observation)
+        XA_infA_recon = torch.sigmoid(self.decoderA(ZA_infA, ZS_infA)).view(XA.shape[0],-1,28,28)
+        XB_infB_recon = self.decoderB(ZB_infB, ZS_infB)
+
+        #cross reconst
+        XA_sinfB_recon = torch.sigmoid(self.decoderA(ZA_infA, ZS_infB)).view(XA.shape[0], -1, 28, 28)
+        XB_sinfA_recon = self.decoderB(ZB_infB, ZS_infA)
+
+        acc_infB = ((XB_infB_recon.argmax(dim=1) == XB).sum() / torch.FloatTensor([batch_size]))[0]
+        acc_POE = ((XB_POE_recon.argmax(dim=1) == XB).sum() / torch.FloatTensor([batch_size]))[0]
+        acc_sinfA = ((XB_sinfA_recon.argmax(dim=1) == XB).sum() / torch.FloatTensor([batch_size]))[0]
+
+        marginal_ll_A_infA = self.marginal_loglikelihood(XA, XA_infA_recon, ZA_infA, ZS_infA, muA_infA, logvarA_infA, relaxedCategA)
+        marginal_ll_A_poe = self.marginal_loglikelihood(XA, XA_POE_recon, ZA_infA, ZS_POE, muA_infA, logvarA_infA, relaxedCategS)
+        marginal_ll_A_pAsB = self.marginal_loglikelihood(XA, XA_sinfB_recon, ZA_infA, ZS_infB, muA_infA, logvarA_infA, relaxedCategB)
+        self.set_mode(train=True)
+        return marginal_ll_A_infA, marginal_ll_A_poe, marginal_ll_A_pAsB, acc_infB, acc_POE, acc_sinfA
+
+
+    def save_recon(self, iters, train=True):
+        self.set_mode(train=False)
+
+        mkdirs(self.output_dir_recon)
+
+        if train:
+            data_loader = self.data_loader
+            if self.categ:
+                #msnit
+                if self.aug:
+                    fixed_idxs = []
+                    for i in range(10):
+                        fixed_idxs.append(i*36000000 + 10010000)
+                else:
+                    fixed_idxs = []
+                    for i in range(10):
+                        fixed_idxs.append(5800 * i + 2005)
+            else:
+                if self.aug:
+                    fixed_idxs = [10000, 100000, 1000000, 10000000, 15000000, 10000000, 15000000, 20000000, 25000000, 30000000]
+                else:
+                    fixed_idxs = []
+                    np.random.seed(0)
+                    for i in range(60):
+                        fixed_idxs.append(550 * 2 * i + np.random.randint(549))
+                print(fixed_idxs)
+            out_dir = os.path.join(self.output_dir_recon, 'train')
+        else:
+            data_loader = self.test_data_loader
+            fixed_idxs = [2, 982, 2300, 3400, 4500, 5500, 6500, 7500, 8500, 9500]
+            out_dir = os.path.join(self.output_dir_recon, 'test')
+
+        fixed_idxs100 = []
+        for idx in fixed_idxs:
+            for i in range(10):
+                fixed_idxs100.append(idx + i)
+
+        XA = [0] * len(fixed_idxs100)
+        XB = [0] * len(fixed_idxs100)
+        label = [0] * len(fixed_idxs100)
+
+        for i, idx in enumerate(fixed_idxs100):
+            XA[i], XB[i], label[i] = \
+                data_loader.dataset.__getitem__(idx)[0:3]
+
+            if self.use_cuda:
+                XA[i] = XA[i].cuda()
+                XB[i] = XB[i].cuda()
+
+        XA = torch.stack(XA)
+        XB = torch.stack(XB)
+        batch_size = XA.shape[0]
+
+        if self.categ:
+            muA_infA, stdA_infA, logvarA_infA, cate_prob_infA = self.encoderA(XA)
+            # zB, zS = encB(xB)
+            muB_infB, stdB_infB, logvarB_infB, cate_prob_infB = self.encoderB(XB)
+
+            '''
+            POE: should be the paramter for the distribution
+            induce zS = encAB(xA,xB) via POE, that is,
+                q(zA,zB,zS | xA,xB) := qI(zA|xA) * qT(zB|xB) * q(zS|xA,xB)
+                    where q(zS|xA,xB) \propto p(zS) * qI(zS|xA) * qT(zS|xB)
+            '''
+            cate_prob_POE = cate_prob_infA * cate_prob_infB
+
+            # encoder samples (for training)
+            ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
+            ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
+
             ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA, train=False)
             ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB, train=False)
             ZS_POE = sample_gumbel_softmax(self.use_cuda, cate_prob_POE, train=False)
-            ZS_POE= torch.sqrt(ZS_POE)
+            ZS_POE = torch.sqrt(ZS_POE)
 
         else:
             muA_infA, stdA_infA, logvarA_infA, \
@@ -914,56 +991,38 @@ class Solver(object):
 
         # reconstructed samples (given joint modal observation)
         XA_POE_recon = torch.sigmoid(self.decoderA(ZA_infA, ZS_POE)).view(XA.shape[0],-1,28,28)
-        # XB_POE_recon = torch.sigmoid(self.decoderB(ZB_infB, ZS_POE))
+        XB_POE_recon = self.decoderB(ZB_infB, ZS_POE)
 
         # reconstructed samples (given single modal observation)
         XA_infA_recon = torch.sigmoid(self.decoderA(ZA_infA, ZS_infA)).view(XA.shape[0],-1,28,28)
-        # XB_infB_recon = torch.sigmoid(self.decoderB(ZB_infB, ZS_infB))
+        XB_infB_recon = self.decoderB(ZB_infB, ZS_infB)
 
-
+        #cross reconst
+        XA_sinfB_recon = torch.sigmoid(self.decoderA(ZA_infA, ZS_infB)).view(XA.shape[0], -1, 28, 28)
+        XB_sinfA_recon = self.decoderB(ZB_infB, ZS_infA)
 
         WS = torch.ones(XA.shape)
         if self.use_cuda:
             WS = WS.cuda()
 
-        n = XA.shape[0]
-        perm = torch.arange(0, 4 * n).view(4, n).transpose(1, 0)
-        perm = perm.contiguous().view(-1)
-
+        imgs = [XA, XA_infA_recon, XA_POE_recon, XA_sinfB_recon, WS]
         merged = torch.cat(
-            [XA, XA_infA_recon, XA_POE_recon, WS], dim=0
+            imgs, dim=0
         )
+
+
+        perm = torch.arange(0, len(imgs) * batch_size).view(len(imgs), batch_size).transpose(1, 0)
+        perm = perm.contiguous().view(-1)
         merged = merged[perm, :].cpu()
 
         # save the results as image
         fname = os.path.join(out_dir, 'reconA_%s.jpg' % iters)
         mkdirs(out_dir)
         save_image(
-            tensor=merged, filename=fname, nrow=4 * int(np.sqrt(n)),
+            tensor=merged, filename=fname, nrow=len(imgs) * int(np.sqrt(batch_size)),
             pad_value=1
         )
 
-        # WS = torch.ones(XB.shape)
-        # if self.use_cuda:
-        #     WS = WS.cuda()
-        #
-        # n = XB.shape[0]
-        # perm = torch.arange(0, 4 * n).view(4, n).transpose(1, 0)
-        # perm = perm.contiguous().view(-1)
-        #
-        # ## ingr
-        # merged = torch.cat(
-        #     [XB, XB_infB_recon, XB_POE_recon, WS], dim=0
-        # )
-        # merged = merged[perm, :].cpu()
-        #
-        # # save the results as image
-        # fname = os.path.join(out_dir, 'reconB_%s.jpg' % iters)
-        # mkdirs(out_dir)
-        # save_image(
-        #     tensor=merged, filename=fname, nrow=4 * int(np.sqrt(n)),
-        #     pad_value=1
-        # )
         self.set_mode(train=True)
 
     ####
@@ -1004,7 +1063,7 @@ class Solver(object):
         self.set_mode(train=True)
 
     ####
-    def save_synth_cross_modal(self, iters, z_A_stat, z_B_stat, train=True, howmany=3):
+    def save_synth_cross_modal(self, iters, z_A_stat, z_B_stat, train=True, howmany=3, save_img=True):
 
         self.set_mode(train=False)
 
@@ -1047,7 +1106,9 @@ class Solver(object):
 
         fixed_XA = torch.stack(fixed_XA)
         fixed_XB = torch.stack(fixed_XB)
-        label = torch.LongTensor(label)
+        # label = torch.LongTensor(label)
+        if self.use_cuda:
+            label = label.cuda()
 
 
         if self.categ:
@@ -1102,43 +1163,39 @@ class Solver(object):
 
             if self.use_cuda:
                 ZB = ZB.cuda()
-            XB_synth = torch.sigmoid(decoderB(ZB, ZS_infA))  # given XA
-            XB_synth_list.extend(XB_synth)
+            XB_synth = decoderB(ZB, ZS_infA)  # given XA
+            XB_synth_list.extend(XB_synth.data.numpy())
             label_list.extend(label)
-            # merged = torch.cat([merged, fixed_XA_3ch], dim=0)
-            merged = torch.cat([merged, XB_synth], dim=0)
-        merged = torch.cat([merged, WS], dim=0)
-        merged = merged[perm, :].cpu()
 
-        # print('=========== cross-synth ACC for XB_synth ============')
-        # XB_synth_list = torch.stack(XB_synth_list)
-        # label_list = torch.LongTensor(label_list)
-        # self.check_acc(XB_synth_list, label_list, dataset='fmnist')
-
-        # save the results as image
         if train:
             fname = os.path.join(
                 self.output_dir_synth,
-                'synth_cross_modal_A2B_%s.jpg' % iters
+                'synth_cross_modal_B2A_%s.txt' % iters
             )
         else:
             fname = os.path.join(
                 self.output_dir_synth,
-                'eval_synth_cross_modal_A2B_%s.jpg' % iters
+                'eval_synth_cross_modal_B2A_%s.txt' % iters
             )
         mkdirs(self.output_dir_synth)
-        save_image(
-            tensor=merged, filename=fname, nrow=(howmany + 2) * int(np.sqrt(n)),
-            pad_value=1
-        )
+        file1 = open(fname, "w")
+        for i in range(len(XB_synth_list)):
+            file1.write('Text (%d): %s\n' % (label_list[i], XB_synth_list[i].argmax()))
+        acc = np.round((np.array(XB_synth_list).argmax(1) == label_list).sum() / len(label_list), 2)
+        file1.write(str(acc))
+        file1.close()
+        # XB_synth_list = torch.stack(XB_synth_list)
+        # label_list = torch.LongTensor(label_list)
+        # acc_synB = (XB_synth_list.argmax(dim=1) == label_list).sum().data.numpy() / len(fixed_idxs)
 
         ######## 2) generate xA from given xB (B2A) ########
-        merged = torch.cat([fixed_XB], dim=0)
+        merged = torch.cat([fixed_XA], dim=0)
         XA_synth_list = []
         for k in range(howmany):
             # z_A_stat = np.array(z_A_stat)
             # z_A_stat_mean = np.mean(z_A_stat, 0)
             # ZA = torch.Tensor(z_A_stat_mean)
+            # ZA_list = []
             # ZA_list = []
             # for _ in range(n):
             #     ZA_list.append(ZA)
@@ -1151,18 +1208,11 @@ class Solver(object):
 
             if self.use_cuda:
                 ZA = ZA.cuda()
-            XA_synth = torch.sigmoid(decoderA(ZA, ZS_infB))  # given XB
+            XA_synth = torch.sigmoid(decoderA(ZA, ZS_infB)).view(ZA.shape[0], -1, 28, 28)  # given XB
             XA_synth_list.extend(XA_synth)
-
-            # merged = torch.cat([merged, fixed_XB[:,:,2:30, 2:30]], dim=0)
             merged = torch.cat([merged, XA_synth], dim=0)
         merged = torch.cat([merged, WS], dim=0)
         merged = merged[perm, :].cpu()
-
-        # print('=========== cross-synth ACC for XA_synth ============')
-        # XA_synth_list = torch.stack(XA_synth_list)
-        # label_list = torch.LongTensor(label_list)
-        # self.check_acc(XA_synth_list, label_list, dataset='mnist')
 
         # save the results as image
         if train:
@@ -1180,7 +1230,6 @@ class Solver(object):
             tensor=merged, filename=fname, nrow=(howmany + 2) * int(np.sqrt(n)),
             pad_value=1
         )
-
         self.set_mode(train=True)
 
 
@@ -1754,7 +1803,11 @@ class Solver(object):
         self.viz.close(env=self.name + '/lines', win=self.win_id['tc'])
         self.viz.close(env=self.name + '/lines', win=self.win_id['mi'])
         self.viz.close(env=self.name + '/lines', win=self.win_id['dw_kl'])
-        # self.viz.close(env=self.name + '/lines', win=self.win_id['disc_latent_acc'])
+
+        self.viz.close(env=self.name + '/lines', win=self.win_id['mgll'])
+        self.viz.close(env=self.name + '/lines', win=self.win_id['acc'])
+        self.viz.close(env=self.name + '/lines', win=self.win_id['mgll_te'])
+        self.viz.close(env=self.name + '/lines', win=self.win_id['acc_te'])
 
         # if self.eval_metrics:
         #     self.viz.close(env=self.name+'/lines', win=self.win_id['metrics'])
@@ -1800,6 +1853,18 @@ class Solver(object):
         mi_loss_POEB =  torch.Tensor(data['mi_loss_POEB'])
         dw_kl_loss_POEB =  torch.Tensor(data['dw_kl_loss_POEB'])
 
+        marginal_ll_A_infA = torch.Tensor(data['marginal_ll_A_infA'])
+        marginal_ll_A_poe = torch.Tensor(data['marginal_ll_A_poe'])
+        marginal_ll_A_pAsB = torch.Tensor(data['marginal_ll_A_pAsB'])
+        acc_infB = torch.Tensor(data['acc_infB'])
+        acc_POE = torch.Tensor(data['acc_POE'])
+        acc_sinfA = torch.Tensor(data['acc_sinfA'])
+        marginal_ll_A_infA_te = torch.Tensor(data['marginal_ll_A_infA_te'])
+        marginal_ll_A_poe_te = torch.Tensor(data['marginal_ll_A_poe_te'])
+        marginal_ll_A_pAsB_te = torch.Tensor(data['marginal_ll_A_pAsB_te'])
+        acc_infB_te = torch.Tensor(data['acc_infB_te'])
+        acc_POE_te = torch.Tensor(data['acc_POE_te'])
+        acc_sinfA_te = torch.Tensor(data['acc_sinfA_te'])
 
         recons = torch.stack(
             [recon_both.detach(), recon_A.detach(), recon_B.detach()], -1
@@ -1819,14 +1884,21 @@ class Solver(object):
             [dw_kl_loss.detach(), dw_kl_loss_A.detach(), dw_kl_loss_B.detach(), dw_kl_loss_POEA.detach(), dw_kl_loss_POEB.detach()], -1
         )
 
-        # acc = torch.stack(
-        #     [poeA_acc.detach(), infA_acc.detach(), synA_acc.detach(), poeB_acc.detach(), infB_acc.detach(), synB_acc.detach()], -1
-        # )
-        #
-        # disc_latent_acc = torch.stack(
-        #     [acc_ZS_infA.detach(), acc_ZS_infB.detach(), acc_ZS_POE.detach()], -1
-        # )
+        acc = torch.stack(
+            [acc_infB.detach(), acc_POE.detach(), acc_sinfA.detach()], -1
+        )
 
+        mgll = torch.stack(
+            [marginal_ll_A_infA.detach(), marginal_ll_A_poe.detach(), marginal_ll_A_pAsB.detach()], -1
+        )
+
+        acc_te = torch.stack(
+            [acc_infB_te.detach(), acc_POE_te.detach(), acc_sinfA_te.detach()], -1
+        )
+
+        mgll_te = torch.stack(
+            [marginal_ll_A_infA_te.detach(), marginal_ll_A_poe_te.detach(), marginal_ll_A_pAsB_te.detach()], -1
+        )
 
         self.viz.line(
             X=iters, Y=recons, env=self.name + '/lines',
@@ -1841,13 +1913,6 @@ class Solver(object):
             opts=dict(xlabel='iter', ylabel='kl losses',
                       title='KL Losses', legend=['A', 'B', 'POE']),
         )
-
-        # self.viz.line(
-        #     X=iters, Y=acc, env=self.name + '/lines',
-        #     win=self.win_id['acc'], update='append',
-        #     opts=dict(xlabel='iter', ylabel='accuracy',
-        #     title = 'Classification Acc', legend = ['poeA_acc', 'infA_acc', 'synA_acc', 'poeB_acc', 'infB_acc', 'synB_acc']),
-        # )
 
         self.viz.line(
             X=iters, Y=tc, env=self.name + '/lines',
@@ -1868,12 +1933,30 @@ class Solver(object):
             win=self.win_id['dw_kl'], update='append',
             opts=dict(xlabel='iter', ylabel='loss',
                       title='dw_kl', legend=['dw_kl', 'dw_kl_infA', 'dw_kl_infB', 'dw_kl_poeA', 'dw_kl_poeB']))
-        # self.viz.line(
-        #     X=iters, Y=disc_latent_acc, env=self.name + '/lines',
-        #     win=self.win_id['disc_latent_acc'], update='append',
-        #     opts=dict(xlabel='iter', ylabel='disc_latent_acc',
-        #     title = 'Discrete latent Acc', legend = ['acc_ZS_infA', 'acc_ZS_infB', 'acc_ZS_POE']),
-        # )
+        self.viz.line(
+            X=iters, Y=acc, env=self.name + '/lines',
+            win=self.win_id['acc'], update='append',
+            opts=dict(xlabel='iter', ylabel='acc',
+            title = 'Accuracy of modalB', legend = ['acc_infB', 'acc_POE', 'acc_sinfA']),
+        )
+        self.viz.line(
+            X=iters, Y=acc_te, env=self.name + '/lines',
+            win=self.win_id['acc_te'], update='append',
+            opts=dict(xlabel='iter', ylabel='acc_te',
+            title = 'Accuracy of modalB test set', legend = ['acc_infB_te', 'acc_POE_te', 'acc_sinfA_te']),
+        )
+        self.viz.line(
+            X=iters, Y=mgll, env=self.name + '/lines',
+            win=self.win_id['mgll'], update='append',
+            opts=dict(xlabel='iter', ylabel='mgll',
+            title = 'marginal LL of modalA', legend = ['marginal_ll_A_infA', 'marginal_ll_A_poe', 'marginal_ll_A_pAsB']),
+        )
+        self.viz.line(
+            X=iters, Y=mgll_te, env=self.name + '/lines',
+            win=self.win_id['mgll_te'], update='append',
+            opts=dict(xlabel='iter', ylabel='mgll_te',
+            title = 'marginal LL of modalA test set', legend = ['marginal_ll_A_infA_te', 'marginal_ll_A_poe_te', 'marginal_ll_A_pAsB_te']),
+        )
     ####
     def visualize_line_metrics(self, iters, metric1, metric2):
 
