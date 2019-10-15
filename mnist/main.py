@@ -95,6 +95,9 @@ def create_parser():
     parser.add_argument( '--lambdaB', default=10.0, type=float,
       help='reconstB' )
 
+    parser.add_argument( '--cross_loss', default=True, type=str2bool,
+      help='Minibatch Stratified Sampling' )
+
     # model hyperparameters
     parser.add_argument( '--image_size', default=64, type=int, 
       help='image size; now only (64 x 64) is supported' )
