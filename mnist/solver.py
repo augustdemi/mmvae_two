@@ -261,12 +261,12 @@ class Solver(object):
             # ============================================
 
             # sample a mini-batch
-            XA, XB, _, _ = next(iterator1)  # (n x C x H x W)
-
-
-            if iteration % iter_per_epoch == 0:
-                XA = paired_XA
-                XB = paired_XB
+            # XA, XB, _, _ = next(iterator1)  # (n x C x H x W)
+            # if iteration % iter_per_epoch == 0:
+            #     XA = paired_XA
+            #     XB = paired_XB
+            XA = paired_XA
+            XB = paired_XB
 
             if self.use_cuda:
                 XA = XA.cuda()
@@ -351,7 +351,10 @@ class Solver(object):
                 self.lambdaA * reconstruction_loss(XA, torch.sigmoid(XA_POE_recon).view(XA.shape[0],-1,28,28), distribution="bernoulli") + \
                 self.lambdaB * cross_entropy_label(XB_POE_recon, XB)
 
-            if self.paired_cnt and iteration % iter_per_epoch != 0:
+            # if self.paired_cnt and iteration % iter_per_epoch != 0:
+            #     loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB
+            #     loss_recon /= 2.0
+            if False:
                 loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB
                 loss_recon /= 2.0
             else:
@@ -409,7 +412,8 @@ class Solver(object):
 
 
 
-            if self.paired_cnt and iteration % iter_per_epoch != 0:
+            # if self.paired_cnt and iteration % iter_per_epoch != 0:
+            if False:
                 loss_kl = loss_kl_infA + loss_kl_infB
                 tc_loss = tc_loss_A + tc_loss_B
                 mi_loss = mi_loss_A + mi_loss_B
