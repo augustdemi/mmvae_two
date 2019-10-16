@@ -11,7 +11,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
 
-import os
+import numpy as np
 
 import torch
 import torchvision.datasets as dset
@@ -41,7 +41,7 @@ class digit(Dataset):
     training_file = 'training.pt'
     test_file = 'test.pt'
 
-    def __init__(self, root, train=True, aug=False):
+    def __init__(self, root, train=True):
         self.root = os.path.expanduser(root)
 
         self.transformer = transforms.ToTensor()
@@ -68,6 +68,24 @@ class digit(Dataset):
         # return self.input_a.size(0)
         return len(self.data['labels'])
 
+    def get_paired_data(self, paired_cnt):
+        label_idx = {}
+        for i in range(10):
+            label_idx.update({i:[]})
+        for i in range(len(self.data['labels'])):
+            label = int(self.data['labels'][i].data.detach().cpu().numpy())
+            label_idx[label].append(i)
+
+        paired_idx = []
+        for i in range(10):
+            for j in range(int(paired_cnt/10)):
+                paired_idx.append(label_idx[i][j])
+        np.random.shuffle(paired_idx)
+        return paired_idx
+
+
+
+
 
 
 def load_mnist():
@@ -88,6 +106,9 @@ def load_mnist():
     }
 
     return train_data, test_data
+
+
+
 
 
 if __name__ == "__main__":

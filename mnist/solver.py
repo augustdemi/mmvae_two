@@ -44,7 +44,6 @@ class Solver(object):
         self.dataset = args.dataset
         self.nc = 3
         self.categ = args.categ
-        self.aug = args.aug
 
         # self.N = self.latent_values.shape[0]
         self.eval_metrics_iter = args.eval_metrics_iter
@@ -75,7 +74,7 @@ class Solver(object):
 
         self.lambdaA = args.lambdaA
         self.lambdaB = args.lambdaB
-
+        self.paired_cnt = args.paired_cnt
 
         # visdom setup
         self.viz_on = args.viz_on
@@ -214,13 +213,28 @@ class Solver(object):
         # prepare dataloader (iterable)
         print('Start loading data...')
         if self.categ:
-            dset = digit('./data', train=True, aug=self.aug)
+            dset = digit('./data', train=True)
         else:
-            dset = DIGIT('./data', train=True, aug=self.aug)
+            dset = DIGIT('./data', train=True)
         self.data_loader = torch.utils.data.DataLoader(dset, batch_size=self.batch_size, shuffle=True)
-        # self.data_loader.dataset.__getitem__(idx)[0:3]
 
-        test_dset = digit('./data', train=False, aug=self.aug)
+        ############ for weakly supervised ############
+        paired_idx = dset.get_paired_data(self.paired_cnt)
+
+        paired_XA = [0] * len(paired_idx)
+        paired_XB = [0] * len(paired_idx)
+        for i, idx in enumerate(paired_idx):
+            paired_XA[i], paired_XB[i]= \
+                self.data_loader.dataset.__getitem__(idx)[0:2]
+            if self.use_cuda:
+                paired_XA[i] = paired_XA[i].cuda()
+                paired_XB[i] = paired_XB[i].cuda()
+        paired_XA = torch.stack(paired_XA)
+        paired_XB = torch.stack(paired_XB)
+
+        ##############################################
+
+        test_dset = digit('./data', train=False)
         self.test_data_loader = torch.utils.data.DataLoader(test_dset, batch_size=self.batch_size, shuffle=True)
         # self.test_data_loader = self.data_loader
         self.N = len(self.data_loader.dataset)
@@ -235,7 +249,7 @@ class Solver(object):
         epoch = int(start_iter / iter_per_epoch)
 
         for iteration in range(start_iter, self.max_iter + 1):
-
+            # iteration = iteration-1
             # reset data iterators for each epoch
             if iteration % iter_per_epoch == 0:
                 print('==== epoch %d done ====' % epoch)
@@ -247,9 +261,13 @@ class Solver(object):
             # ============================================
 
             # sample a mini-batch
-            XA, XB, label, index = next(iterator1)  # (n x C x H x W)
+            XA, XB, _, _ = next(iterator1)  # (n x C x H x W)
 
-            index = index.cpu().detach().numpy()
+
+            if iteration % iter_per_epoch == 0:
+                XA = paired_XA
+                XB = paired_XB
+
             if self.use_cuda:
                 XA = XA.cuda()
                 XB = XB.cuda()
@@ -333,15 +351,20 @@ class Solver(object):
                 self.lambdaA * reconstruction_loss(XA, torch.sigmoid(XA_POE_recon).view(XA.shape[0],-1,28,28), distribution="bernoulli") + \
                 self.lambdaB * cross_entropy_label(XB_POE_recon, XB)
 
-            loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB + loss_recon_POE
-
-            if self.cross_loss:
-                # cross shared
-                loss_reconA_sinfB = reconstruction_loss(XA, torch.sigmoid(XA_sinfB_recon).view(XA.shape[0], -1, 28, 28),
-                                                        distribution="bernoulli")
-                loss_reconB_sinfA = cross_entropy_label(XB_sinfA_recon, XB)
-                loss_cross = self.lambdaA * loss_reconA_sinfB + self.lambdaB * loss_reconB_sinfA
-                loss_recon += loss_cross
+            if self.paired_cnt and iteration % iter_per_epoch != 0:
+                loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB
+                loss_recon /= 2.0
+            else:
+                loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB + loss_recon_POE
+                loss_recon /= 3.0
+                if self.cross_loss:
+                    # cross shared
+                    loss_reconA_sinfB = reconstruction_loss(XA, torch.sigmoid(XA_sinfB_recon).view(XA.shape[0], -1, 28, 28),
+                                                            distribution="bernoulli")
+                    loss_reconB_sinfA = cross_entropy_label(XB_sinfA_recon, XB)
+                    loss_cross = self.lambdaA * loss_reconA_sinfB + self.lambdaB * loss_reconB_sinfA
+                    loss_recon += loss_cross
+                    loss_recon /= 5.0
 
             #================================== decomposed KL ========================================
 
@@ -384,25 +407,43 @@ class Solver(object):
             # loss_kl_POE
             loss_kl_POE = 0.5 * (loss_kl_POEA + loss_kl_POEB)
 
-            loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
 
-            tc_loss = tc_loss_A + tc_loss_B + 0.5 * (tc_loss_POEA + tc_loss_POEB)
-            mi_loss = mi_loss_A + mi_loss_B + 0.5 * (mi_loss_POEA + mi_loss_POEB)
-            dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B + 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB)
 
-            if self.cross_loss:
-                # loss_kl_infA_sB
-                mi_loss_A_sB, tc_loss_A_sB, dw_kl_loss_A_sB, loss_kl_infA_sB = self.kl_loss(log_pz_A_sB, log_qz_A_sB,
-                                                                                            log_prod_qzi_A_sB,
-                                                                                            log_q_zCx_A_sB)
-                # loss_kl_infB_sA
-                mi_loss_B_sA, tc_loss_B_sA, dw_kl_loss_B_sA, loss_kl_infB_sA = self.kl_loss(log_pz_B_sA, log_qz_B_sA,
-                                                                                            log_prod_qzi_B_sA,
-                                                                                            log_q_zCx_B_sA)
-                loss_kl += loss_kl_infA_sB + loss_kl_infB_sA
-                tc_loss += tc_loss_A_sB + tc_loss_B_sA
-                mi_loss += mi_loss_A_sB + mi_loss_B_sA
-                dw_kl_loss += dw_kl_loss_A_sB + dw_kl_loss_B_sA
+            if self.paired_cnt and iteration % iter_per_epoch != 0:
+                loss_kl = loss_kl_infA + loss_kl_infB
+                tc_loss = tc_loss_A + tc_loss_B
+                mi_loss = mi_loss_A + mi_loss_B
+                dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B
+                loss_kl /= 2.0
+                tc_loss /= 2.0
+                mi_loss /= 2.0
+                dw_kl_loss /= 2.0
+            else:
+                loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
+                tc_loss = tc_loss_A + tc_loss_B + 0.5 * (tc_loss_POEA + tc_loss_POEB)
+                mi_loss = mi_loss_A + mi_loss_B + 0.5 * (mi_loss_POEA + mi_loss_POEB)
+                dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B + 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB)
+                loss_kl /= 3.0
+                tc_loss /= 3.0
+                mi_loss /= 3.0
+                dw_kl_loss /= 3.0
+                if self.cross_loss:
+                    # loss_kl_infA_sB
+                    mi_loss_A_sB, tc_loss_A_sB, dw_kl_loss_A_sB, loss_kl_infA_sB = self.kl_loss(log_pz_A_sB, log_qz_A_sB,
+                                                                                                log_prod_qzi_A_sB,
+                                                                                                log_q_zCx_A_sB)
+                    # loss_kl_infB_sA
+                    mi_loss_B_sA, tc_loss_B_sA, dw_kl_loss_B_sA, loss_kl_infB_sA = self.kl_loss(log_pz_B_sA, log_qz_B_sA,
+                                                                                                log_prod_qzi_B_sA,
+                                                                                                log_q_zCx_B_sA)
+                    loss_kl += loss_kl_infA_sB + loss_kl_infB_sA
+                    tc_loss += tc_loss_A_sB + tc_loss_B_sA
+                    mi_loss += mi_loss_A_sB + mi_loss_B_sA
+                    dw_kl_loss += dw_kl_loss_A_sB + dw_kl_loss_B_sA
+                    loss_kl /= 5.0
+                    tc_loss /= 5.0
+                    mi_loss /= 5.0
+                    dw_kl_loss /= 5.0
 
             ################## total loss for vae ####################
             vae_loss = loss_recon + loss_kl
