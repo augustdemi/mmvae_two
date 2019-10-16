@@ -1970,13 +1970,13 @@ class Solver(object):
             X=iters, Y=acc, env=self.name + '/lines',
             win=self.win_id['acc'], update='append',
             opts=dict(xlabel='iter', ylabel='acc',
-            title = 'Accuracy of modalB', legend = ['acc_infB', 'acc_POE', 'acc_sinfA', 'acc_infA']),
+            title = 'Accuracy of modalB', legend = ['acc_infB', 'acc_POE', 'acc_pBsA', 'acc_pBMEANsA']),
         )
         self.viz.line(
             X=iters, Y=acc_te, env=self.name + '/lines',
             win=self.win_id['acc_te'], update='append',
             opts=dict(xlabel='iter', ylabel='acc_te',
-            title = 'Accuracy of modalB test set', legend = ['acc_infB_te', 'acc_POE_te', 'acc_sinfA_te', 'acc_sinfA_te']),
+            title = 'Accuracy of modalB test set', legend = ['acc_infB_te', 'acc_POE_te', 'acc_pBsA_te', 'acc_pBMEANsA_te']),
         )
         self.viz.line(
             X=iters, Y=mgll, env=self.name + '/lines',
