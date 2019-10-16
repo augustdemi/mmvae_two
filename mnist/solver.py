@@ -356,10 +356,8 @@ class Solver(object):
             #     loss_recon /= 2.0
             if False:
                 loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB
-                loss_recon /= 2.0
             else:
                 loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB + loss_recon_POE
-                loss_recon /= 3.0
                 if self.cross_loss:
                     # cross shared
                     loss_reconA_sinfB = reconstruction_loss(XA, torch.sigmoid(XA_sinfB_recon).view(XA.shape[0], -1, 28, 28),
@@ -367,7 +365,6 @@ class Solver(object):
                     loss_reconB_sinfA = cross_entropy_label(XB_sinfA_recon, XB)
                     loss_cross = self.lambdaA * loss_reconA_sinfB + self.lambdaB * loss_reconB_sinfA
                     loss_recon += loss_cross
-                    loss_recon /= 5.0
 
             #================================== decomposed KL ========================================
 
@@ -418,19 +415,11 @@ class Solver(object):
                 tc_loss = tc_loss_A + tc_loss_B
                 mi_loss = mi_loss_A + mi_loss_B
                 dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B
-                loss_kl /= 2.0
-                tc_loss /= 2.0
-                mi_loss /= 2.0
-                dw_kl_loss /= 2.0
             else:
                 loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
                 tc_loss = tc_loss_A + tc_loss_B + 0.5 * (tc_loss_POEA + tc_loss_POEB)
                 mi_loss = mi_loss_A + mi_loss_B + 0.5 * (mi_loss_POEA + mi_loss_POEB)
                 dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B + 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB)
-                loss_kl /= 3.0
-                tc_loss /= 3.0
-                mi_loss /= 3.0
-                dw_kl_loss /= 3.0
                 if self.cross_loss:
                     # loss_kl_infA_sB
                     mi_loss_A_sB, tc_loss_A_sB, dw_kl_loss_A_sB, loss_kl_infA_sB = self.kl_loss(log_pz_A_sB, log_qz_A_sB,
@@ -444,11 +433,6 @@ class Solver(object):
                     tc_loss += tc_loss_A_sB + tc_loss_B_sA
                     mi_loss += mi_loss_A_sB + mi_loss_B_sA
                     dw_kl_loss += dw_kl_loss_A_sB + dw_kl_loss_B_sA
-                    loss_kl /= 5.0
-                    tc_loss /= 5.0
-                    mi_loss /= 5.0
-                    dw_kl_loss /= 5.0
-
             ################## total loss for vae ####################
             vae_loss = loss_recon + loss_kl
 
