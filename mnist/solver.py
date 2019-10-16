@@ -75,6 +75,7 @@ class Solver(object):
         self.lambdaA = args.lambdaA
         self.lambdaB = args.lambdaB
         self.paired_cnt = args.paired_cnt
+        self.unsup = args.unsup
 
         # visdom setup
         self.viz_on = args.viz_on
@@ -262,11 +263,9 @@ class Solver(object):
 
             # sample a mini-batch
             XA, XB, _, _ = next(iterator1)  # (n x C x H x W)
-            # if iteration % iter_per_epoch == 0:
-            #     XA = paired_XA
-            #     XB = paired_XB
-            # XA = paired_XA
-            # XB = paired_XB
+            if not self.unsup:
+                XA = paired_XA
+                XB = paired_XB
 
             if self.use_cuda:
                 XA = XA.cuda()
@@ -354,12 +353,12 @@ class Solver(object):
             # if self.paired_cnt and iteration % iter_per_epoch != 0:
             #     loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB
             #     loss_recon /= 2.0
-            if True:
+            if self.unsup:
                 loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB
-                loss_recon /= 2.0
+                # loss_recon /= 2.0
             else:
                 loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB + loss_recon_POE
-                loss_recon /= 3.0
+                # loss_recon /= 3.0
                 if self.cross_loss:
                     # cross shared
                     loss_reconA_sinfB = reconstruction_loss(XA, torch.sigmoid(XA_sinfB_recon).view(XA.shape[0], -1, 28, 28),
@@ -367,7 +366,7 @@ class Solver(object):
                     loss_reconB_sinfA = cross_entropy_label(XB_sinfA_recon, XB)
                     loss_cross = self.lambdaA * loss_reconA_sinfB + self.lambdaB * loss_reconB_sinfA
                     loss_recon += loss_cross
-                    loss_recon /= 5.0
+                    # loss_recon /= 5.0
 
             #================================== decomposed KL ========================================
 
@@ -413,24 +412,24 @@ class Solver(object):
 
 
             # if self.paired_cnt and iteration % iter_per_epoch != 0:
-            if True:
+            if self.unsup:
                 loss_kl = loss_kl_infA + loss_kl_infB
                 tc_loss = tc_loss_A + tc_loss_B
                 mi_loss = mi_loss_A + mi_loss_B
                 dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B
-                loss_kl /= 2.0
-                tc_loss /= 2.0
-                mi_loss /= 2.0
-                dw_kl_loss /= 2.0
+                # loss_kl /= 2.0
+                # tc_loss /= 2.0
+                # mi_loss /= 2.0
+                # dw_kl_loss /= 2.0
             else:
                 loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
                 tc_loss = tc_loss_A + tc_loss_B + 0.5 * (tc_loss_POEA + tc_loss_POEB)
                 mi_loss = mi_loss_A + mi_loss_B + 0.5 * (mi_loss_POEA + mi_loss_POEB)
                 dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B + 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB)
-                loss_kl /= 3.0
-                tc_loss /= 3.0
-                mi_loss /= 3.0
-                dw_kl_loss /= 3.0
+                # loss_kl /= 3.0
+                # tc_loss /= 3.0
+                # mi_loss /= 3.0
+                # dw_kl_loss /= 3.0
                 if self.cross_loss:
                     # loss_kl_infA_sB
                     mi_loss_A_sB, tc_loss_A_sB, dw_kl_loss_A_sB, loss_kl_infA_sB = self.kl_loss(log_pz_A_sB, log_qz_A_sB,

@@ -123,6 +123,8 @@ def create_parser():
       help='if shared factor is categorical or not' )
     parser.add_argument( '--paired_cnt',  default=None, type=int,
       help='paired cnt for weakly sup' )
+    parser.add_argument( '--unsup', default=False, type=str2bool,
+      help='train POE or not' )
     
     # iter# for previously saved model
     parser.add_argument( '--ckpt_load_iter', default=0, type=int, 
