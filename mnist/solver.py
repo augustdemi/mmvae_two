@@ -284,10 +284,10 @@ class Solver(object):
             self.lambdaB * cross_entropy_label(XB_POE_recon, XB)
 
         if not paired:
-            loss_recon = 3 * (self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB)
+            loss_recon = 2 * (self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB)
         else:
             # supervised, no cross-loss
-            loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB + loss_recon_POE
+            loss_recon = loss_recon_POE
             # supervised, cross-loss
             if self.cross_loss:
                 # cross shared
@@ -352,16 +352,16 @@ class Solver(object):
 
         # unsupervised
         if not paired:
-            loss_kl = 2.5 * (loss_kl_infA + loss_kl_infB)
-            tc_loss = 2.5 * (tc_loss_A + tc_loss_B)
-            mi_loss = 2.5 * (mi_loss_A + mi_loss_B)
-            dw_kl_loss = 2.5 * (dw_kl_loss_A + dw_kl_loss_B)
+            loss_kl = 1.5 * (loss_kl_infA + loss_kl_infB)
+            tc_loss = 1.5 * (tc_loss_A + tc_loss_B)
+            mi_loss = 1.5 * (mi_loss_A + mi_loss_B)
+            dw_kl_loss = 1.5 * (dw_kl_loss_A + dw_kl_loss_B)
         else:
             # supervised, no cross-lss
-            loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
-            tc_loss = tc_loss_A + tc_loss_B + 0.5 * (tc_loss_POEA + tc_loss_POEB)
-            mi_loss = mi_loss_A + mi_loss_B + 0.5 * (mi_loss_POEA + mi_loss_POEB)
-            dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B + 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB)
+            loss_kl = loss_kl_POE
+            tc_loss = 0.5 * (tc_loss_POEA + tc_loss_POEB)
+            mi_loss = 0.5 * (mi_loss_POEA + mi_loss_POEB)
+            dw_kl_loss = 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB)
             # supervised, cross-lss
             if self.cross_loss:
                 # loss_kl_infA_sB
