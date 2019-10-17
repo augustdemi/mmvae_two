@@ -434,9 +434,9 @@ class Solver(object):
 
             # sample a mini-batch
             XA, XB, _, _ = next(iterator1)  # (n x C x H x W)
-            if not self.unsup or iteration % 100 == 0:
-                XA = paired_XA
-                XB = paired_XB
+            # if not self.unsup or iteration % 100 == 0:
+            #     XA = paired_XA
+            #     XB = paired_XB
 
             if self.use_cuda:
                 XA = XA.cuda()
