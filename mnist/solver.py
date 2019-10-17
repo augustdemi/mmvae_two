@@ -284,7 +284,7 @@ class Solver(object):
             self.lambdaB * cross_entropy_label(XB_POE_recon, XB)
 
         if not paired:
-            loss_recon = 2 * (self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB)
+            loss_recon = 3 * (self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB)
         else:
             # supervised, no cross-loss
             loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB + loss_recon_POE
@@ -352,10 +352,10 @@ class Solver(object):
 
         # unsupervised
         if not paired:
-            loss_kl = 1.5 * (loss_kl_infA + loss_kl_infB)
-            tc_loss = 1.5 * (tc_loss_A + tc_loss_B)
-            mi_loss = 1.5 * (mi_loss_A + mi_loss_B)
-            dw_kl_loss = 1.5 * (dw_kl_loss_A + dw_kl_loss_B)
+            loss_kl = 2.5 * (loss_kl_infA + loss_kl_infB)
+            tc_loss = 2.5 * (tc_loss_A + tc_loss_B)
+            mi_loss = 2.5 * (mi_loss_A + mi_loss_B)
+            dw_kl_loss = 2.5 * (dw_kl_loss_A + dw_kl_loss_B)
         else:
             # supervised, no cross-lss
             loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
@@ -434,7 +434,7 @@ class Solver(object):
 
             # sample a mini-batch
             XA, XB, _, _ = next(iterator1)  # (n x C x H x W)
-            # if not self.unsup or iteration % 100 == 0:
+            # if iteration % 2 == 0:
             #     XA = paired_XA
             #     XB = paired_XB
 
@@ -444,27 +444,34 @@ class Solver(object):
 
 
             loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(False,XA,XB)
-            paired_loss_recon, paired_loss_recon_infA, paired_loss_recon_infB, paired_loss_recon_POE, paired_loss_kl, paired_tc_loss, paired_mi_loss, paired_dw_kl_loss = self.get_loss(True,paired_XA,paired_XB)
+            # paired_loss_recon, paired_loss_recon_infA, paired_loss_recon_infB, paired_loss_recon_POE, paired_loss_kl, paired_tc_loss, paired_mi_loss, paired_dw_kl_loss = self.get_loss(
+            #     True, paired_XA, paired_XB)
 
-            loss_recon += paired_loss_recon
-            loss_recon_infA += paired_loss_recon_infA
-            loss_recon_infB += paired_loss_recon_infB
-            loss_recon_POE += paired_loss_recon_POE
-            loss_kl += paired_loss_kl
-            tc_loss += paired_tc_loss
-            mi_loss += paired_mi_loss
-            dw_kl_loss += paired_dw_kl_loss
+            # loss_recon += paired_loss_recon
+            # loss_recon_infA += paired_loss_recon_infA
+            # loss_recon_infB += paired_loss_recon_infB
+            # loss_recon_POE += paired_loss_recon_POE
+            # loss_kl += paired_loss_kl
+            # tc_loss += paired_tc_loss
+            # mi_loss += paired_mi_loss
+            # dw_kl_loss += paired_dw_kl_loss
 
             ################## total loss for vae ####################
             vae_loss = loss_recon + loss_kl
-
 
             ####### update vae ##########
             self.optim_vae.zero_grad()
             vae_loss.backward()
             self.optim_vae.step()
 
-
+            #################### for paired ################
+            loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(
+                True, paired_XA, paired_XB)
+            vae_loss = loss_recon + loss_kl
+            self.optim_vae.zero_grad()
+            vae_loss.backward()
+            self.optim_vae.step()
+            ###########################################################
 
             # print the losses
             if iteration % self.print_iter == 0:
