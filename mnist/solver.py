@@ -85,12 +85,7 @@ class Solver(object):
             )
             self.line_gather = DataGather(
                 'iter', 'recon_both', 'recon_A', 'recon_B',
-                'kl_A', 'kl_B', 'kl_POE',
                 'tc_loss', 'mi_loss', 'dw_kl_loss',
-                'tc_loss_A', 'mi_loss_A', 'dw_kl_loss_A',
-                'tc_loss_B', 'mi_loss_B', 'dw_kl_loss_B',
-                'tc_loss_POEA', 'mi_loss_POEA', 'dw_kl_loss_POEA',
-                'tc_loss_POEB', 'mi_loss_POEB', 'dw_kl_loss_POEB',
                 'marginal_ll_A_infA', 'marginal_ll_A_poe', 'marginal_ll_A_pAsB', 'acc_infB', 'acc_POE', 'acc_sinfA',
                 'marginal_ll_A_infA_te', 'marginal_ll_A_poe_te', 'marginal_ll_A_pAsB_te', 'acc_infB_te', 'acc_POE_te', 'acc_sinfA_te',
                 'acc_infA', 'acc_infA_te'
@@ -206,6 +201,182 @@ class Solver(object):
             {'cont': z_private, 'disc': z_shared}, {'cont': (mu, logvar), 'disc': relaxedCateg}, n_data, is_mss=self.is_mss)
         return log_pz, log_qz, log_prod_qzi, log_q_zCx
 
+    def get_loss(self, paired, XA, XB):
+        # zA, zS = encA(xA)
+        if self.categ:
+            muA_infA, stdA_infA, logvarA_infA, cate_prob_infA = self.encoderA(XA)
+            # zB, zS = encB(xB)
+            muB_infB, stdB_infB, logvarB_infB, cate_prob_infB = self.encoderB(XB)
+
+            '''
+            POE: should be the paramter for the distribution
+            induce zS = encAB(xA,xB) via POE, that is,
+                q(zA,zB,zS | xA,xB) := qI(zA|xA) * qT(zB|xB) * q(zS|xA,xB)
+                    where q(zS|xA,xB) \propto p(zS) * qI(zS|xA) * qT(zS|xB)
+            '''
+            cate_prob_POE = cate_prob_infA * cate_prob_infB
+
+            # encoder samples (for training)
+            ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
+            ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
+
+            # ZS need the distribution class to calculate the pmf value in decompositon of KL
+            Eps = 1e-12
+            # distribution
+            relaxedCategA = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infA + Eps))
+            relaxedCategB = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infB + Eps))
+            relaxedCategS = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_POE + Eps))
+
+            # sampling
+            log_ZS_infA = relaxedCategA.rsample()
+            ZS_infA = torch.exp(log_ZS_infA)
+            log_ZS_infB = relaxedCategB.rsample()
+            ZS_infB = torch.exp(log_ZS_infB)
+            log_ZS_POE = relaxedCategS.rsample()
+            ZS_POE = torch.exp(log_ZS_POE)
+            ZS_POE = torch.sqrt(ZS_POE)
+            # the above sampling of ZS_infA/B are same 'way' as below
+            # ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA)
+            # ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB)
+
+        else:
+            muA_infA, stdA_infA, logvarA_infA, \
+            muS_infA, stdS_infA, logvarS_infA = self.encoderA(XA)
+
+            # zB, zS = encB(xB)
+            muB_infB, stdB_infB, logvarB_infB, \
+            muS_infB, stdS_infB, logvarS_infB = self.encoderB(XB)
+
+            # zS = encAB(xA,xB) via POE
+            muS_POE, stdS_POE, logvarS_POE = apply_poe(
+                self.use_cuda, muS_infA, logvarS_infA, muS_infB, logvarS_infB,
+            )
+
+            # encoder samples (for training)
+            ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
+            ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
+            ZS_POE = sample_gaussian(self.use_cuda, muS_POE, stdS_POE)
+            # encoder samples (for cross-modal prediction)
+            ZS_infA = sample_gaussian(self.use_cuda, muS_infA, stdS_infA)
+            ZS_infB = sample_gaussian(self.use_cuda, muS_infB, stdS_infB)
+
+        #### For all cate_prob_infA(statiscts), total 64, get log_prob_ZS_infB2 for each of ZS_infB2(sample) ==> 64*64. marig. out for q_z for MI
+
+
+        # one modal
+        XA_infA_recon = self.decoderA(ZA_infA, ZS_infA)
+        XB_infB_recon = self.decoderB(ZB_infB, ZS_infB)
+        # POE
+        XA_POE_recon = self.decoderA(ZA_infA, ZS_POE)
+        XB_POE_recon = self.decoderB(ZB_infB, ZS_POE)
+        # cross shared
+        XA_sinfB_recon = self.decoderA(ZA_infA, ZS_infB)
+        XB_sinfA_recon = self.decoderB(ZB_infB, ZS_infA)
+
+        # one modal
+        loss_recon_infA = reconstruction_loss(XA, torch.sigmoid(XA_infA_recon).view(XA.shape[0], -1, 28, 28),
+                                              distribution="bernoulli")
+        loss_recon_infB = cross_entropy_label(XB_infB_recon, XB)
+        # POE
+        loss_recon_POE = \
+            self.lambdaA * reconstruction_loss(XA, torch.sigmoid(XA_POE_recon).view(XA.shape[0], -1, 28, 28),
+                                               distribution="bernoulli") + \
+            self.lambdaB * cross_entropy_label(XB_POE_recon, XB)
+
+        if not paired:
+            loss_recon = 2 * (self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB)
+        else:
+            # supervised, no cross-loss
+            loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB + loss_recon_POE
+            # supervised, cross-loss
+            if self.cross_loss:
+                # cross shared
+                loss_reconA_sinfB = reconstruction_loss(XA, torch.sigmoid(XA_sinfB_recon).view(XA.shape[0], -1, 28, 28),
+                                                        distribution="bernoulli")
+                loss_reconB_sinfA = cross_entropy_label(XB_sinfA_recon, XB)
+                loss_cross = self.lambdaA * loss_reconA_sinfB + self.lambdaB * loss_reconB_sinfA
+                loss_recon += loss_cross
+
+        # ================================== decomposed KL ========================================
+
+        if self.categ:
+            log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A = self.log_prob(ZA_infA, ZS_infA, muA_infA, logvarA_infA,
+                                                                            relaxedCategA)
+            log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B = self.log_prob(ZB_infB, ZS_infB, muB_infB, logvarB_infB,
+                                                                            relaxedCategB)
+            log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA = self.log_prob(ZA_infA, ZS_POE, muA_infA,
+                                                                                        logvarA_infA, relaxedCategS)
+            log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB = self.log_prob(ZB_infB, ZS_POE, muB_infB,
+                                                                                        logvarB_infB, relaxedCategS)
+            if self.cross_loss:
+                log_pz_A_sB, log_qz_A_sB, log_prod_qzi_A_sB, log_q_zCx_A_sB = self.log_prob(ZA_infA, ZS_infB, muA_infA,
+                                                                                            logvarA_infA, relaxedCategB)
+                log_pz_B_sA, log_qz_B_sA, log_prod_qzi_B_sA, log_q_zCx_B_sA = self.log_prob(ZB_infB, ZS_infA, muB_infB,
+                                                                                            logvarB_infB, relaxedCategA)
+        else:
+            log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A, _ = get_log_pz_qz_prodzi_qzCx(
+                {'cont': torch.cat((ZA_infA, ZS_infA), dim=1)},
+                {'cont': (torch.cat((muA_infA, muS_infA), dim=1), torch.cat((logvarA_infA, logvarS_infA), dim=1))},
+                len(self.data_loader.dataset),
+                is_mss=self.is_mss)
+
+            log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B, _ = get_log_pz_qz_prodzi_qzCx(
+                {'cont': torch.cat((ZB_infB, ZS_infB), dim=1)},
+                {'cont': (torch.cat((muB_infB, muS_infB), dim=1), torch.cat((logvarB_infB, logvarS_infB), dim=1))},
+                len(self.data_loader.dataset),
+                is_mss=self.is_mss)
+
+            log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA, _ = get_log_pz_qz_prodzi_qzCx(
+                {'cont': torch.cat((ZA_infA, ZS_POE), dim=1)},
+                {'cont': (torch.cat((muA_infA, muS_POE), dim=1), torch.cat((logvarA_infA, logvarS_POE), dim=1))},
+                len(self.data_loader.dataset),
+                is_mss=self.is_mss)
+
+            log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB, _ = get_log_pz_qz_prodzi_qzCx(
+                {'cont': torch.cat((ZB_infB, ZS_POE), dim=1)},
+                {'cont': (torch.cat((muB_infB, muS_POE), dim=1), torch.cat((logvarB_infB, logvarS_POE), dim=1))},
+                len(self.data_loader.dataset),
+                is_mss=self.is_mss)
+        # loss_kl_infA
+        mi_loss_A, tc_loss_A, dw_kl_loss_A, loss_kl_infA = self.kl_loss(log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A)
+        # loss_kl_infB
+        mi_loss_B, tc_loss_B, dw_kl_loss_B, loss_kl_infB = self.kl_loss(log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B)
+        # loss_kl_POEA
+        mi_loss_POEA, tc_loss_POEA, dw_kl_loss_POEA, loss_kl_POEA = self.kl_loss(log_pz_POEA, log_qz_POEA,
+                                                                                 log_prod_qzi_POEA, log_q_zCx_POEA)
+        # loss_kl_POEB
+        mi_loss_POEB, tc_loss_POEB, dw_kl_loss_POEB, loss_kl_POEB = self.kl_loss(log_pz_POEB, log_qz_POEB,
+                                                                                 log_prod_qzi_POEB, log_q_zCx_POEB)
+        # loss_kl_POE
+        loss_kl_POE = 0.5 * (loss_kl_POEA + loss_kl_POEB)
+
+        # unsupervised
+        if not paired:
+            loss_kl = 1.5 * (loss_kl_infA + loss_kl_infB)
+            tc_loss = 1.5 * (tc_loss_A + tc_loss_B)
+            mi_loss = 1.5 * (mi_loss_A + mi_loss_B)
+            dw_kl_loss = 1.5 * (dw_kl_loss_A + dw_kl_loss_B)
+        else:
+            # supervised, no cross-lss
+            loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
+            tc_loss = tc_loss_A + tc_loss_B + 0.5 * (tc_loss_POEA + tc_loss_POEB)
+            mi_loss = mi_loss_A + mi_loss_B + 0.5 * (mi_loss_POEA + mi_loss_POEB)
+            dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B + 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB)
+            # supervised, cross-lss
+            if self.cross_loss:
+                # loss_kl_infA_sB
+                mi_loss_A_sB, tc_loss_A_sB, dw_kl_loss_A_sB, loss_kl_infA_sB = self.kl_loss(log_pz_A_sB, log_qz_A_sB,
+                                                                                            log_prod_qzi_A_sB,
+                                                                                            log_q_zCx_A_sB)
+                # loss_kl_infB_sA
+                mi_loss_B_sA, tc_loss_B_sA, dw_kl_loss_B_sA, loss_kl_infB_sA = self.kl_loss(log_pz_B_sA, log_qz_B_sA,
+                                                                                            log_prod_qzi_B_sA,
+                                                                                            log_q_zCx_B_sA)
+                loss_kl += loss_kl_infA_sB + loss_kl_infB_sA
+                tc_loss += tc_loss_A_sB + tc_loss_B_sA
+                mi_loss += mi_loss_A_sB + mi_loss_B_sA
+                dw_kl_loss += dw_kl_loss_A_sB + dw_kl_loss_B_sA
+        return loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss
     ####
     def train(self):
 
@@ -271,172 +442,18 @@ class Solver(object):
                 XA = XA.cuda()
                 XB = XB.cuda()
 
-            # zA, zS = encA(xA)
-            if self.categ:
-                muA_infA, stdA_infA, logvarA_infA, cate_prob_infA = self.encoderA(XA)
-                # zB, zS = encB(xB)
-                muB_infB, stdB_infB, logvarB_infB, cate_prob_infB = self.encoderB(XB)
 
-                '''
-                POE: should be the paramter for the distribution
-                induce zS = encAB(xA,xB) via POE, that is,
-                    q(zA,zB,zS | xA,xB) := qI(zA|xA) * qT(zB|xB) * q(zS|xA,xB)
-                        where q(zS|xA,xB) \propto p(zS) * qI(zS|xA) * qT(zS|xB)
-                '''
-                cate_prob_POE = cate_prob_infA * cate_prob_infB
+            loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(False,XA,XB)
+            paired_loss_recon, paired_loss_recon_infA, paired_loss_recon_infB, paired_loss_recon_POE, paired_loss_kl, paired_tc_loss, paired_mi_loss, paired_dw_kl_loss = self.get_loss(True,paired_XA,paired_XB)
 
-                # encoder samples (for training)
-                ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
-                ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
-
-                # ZS need the distribution class to calculate the pmf value in decompositon of KL
-                Eps = 1e-12
-                # distribution
-                relaxedCategA = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infA + Eps))
-                relaxedCategB = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_infB + Eps))
-                relaxedCategS = ExpRelaxedCategorical(torch.tensor(.67), logits=torch.log(cate_prob_POE + Eps))
-
-                # sampling
-                log_ZS_infA = relaxedCategA.rsample()
-                ZS_infA = torch.exp(log_ZS_infA)
-                log_ZS_infB = relaxedCategB.rsample()
-                ZS_infB = torch.exp(log_ZS_infB)
-                log_ZS_POE = relaxedCategS.rsample()
-                ZS_POE = torch.exp(log_ZS_POE)
-                ZS_POE = torch.sqrt(ZS_POE)
-                # the above sampling of ZS_infA/B are same 'way' as below
-                # ZS_infA = sample_gumbel_softmax(self.use_cuda, cate_prob_infA)
-                # ZS_infB = sample_gumbel_softmax(self.use_cuda, cate_prob_infB)
-
-            else:
-                muA_infA, stdA_infA, logvarA_infA, \
-                muS_infA, stdS_infA, logvarS_infA = self.encoderA(XA)
-
-                # zB, zS = encB(xB)
-                muB_infB, stdB_infB, logvarB_infB, \
-                muS_infB, stdS_infB, logvarS_infB = self.encoderB(XB)
-
-                # zS = encAB(xA,xB) via POE
-                muS_POE, stdS_POE, logvarS_POE = apply_poe(
-                    self.use_cuda, muS_infA, logvarS_infA, muS_infB, logvarS_infB,
-                )
-
-                # encoder samples (for training)
-                ZA_infA = sample_gaussian(self.use_cuda, muA_infA, stdA_infA)
-                ZB_infB = sample_gaussian(self.use_cuda, muB_infB, stdB_infB)
-                ZS_POE  = sample_gaussian(self.use_cuda, muS_POE, stdS_POE)
-                # encoder samples (for cross-modal prediction)
-                ZS_infA = sample_gaussian(self.use_cuda, muS_infA, stdS_infA)
-                ZS_infB = sample_gaussian(self.use_cuda, muS_infB, stdS_infB)
-
-            #### For all cate_prob_infA(statiscts), total 64, get log_prob_ZS_infB2 for each of ZS_infB2(sample) ==> 64*64. marig. out for q_z for MI
-
-
-            # one modal
-            XA_infA_recon = self.decoderA(ZA_infA, ZS_infA)
-            XB_infB_recon = self.decoderB(ZB_infB, ZS_infB)
-            # POE
-            XA_POE_recon = self.decoderA(ZA_infA, ZS_POE)
-            XB_POE_recon = self.decoderB(ZB_infB, ZS_POE)
-            # cross shared
-            XA_sinfB_recon = self.decoderA(ZA_infA, ZS_infB)
-            XB_sinfA_recon = self.decoderB(ZB_infB, ZS_infA)
-
-            # one modal
-            loss_recon_infA = reconstruction_loss(XA, torch.sigmoid(XA_infA_recon).view(XA.shape[0],-1,28,28), distribution="bernoulli")
-            loss_recon_infB = cross_entropy_label(XB_infB_recon, XB)
-            # POE
-            loss_recon_POE = \
-                self.lambdaA * reconstruction_loss(XA, torch.sigmoid(XA_POE_recon).view(XA.shape[0],-1,28,28), distribution="bernoulli") + \
-                self.lambdaB * cross_entropy_label(XB_POE_recon, XB)
-
-
-            if self.unsup:
-                loss_recon = 2 * (self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB)
-            if not self.unsup or iteration % 100 == 0:
-                # supervised, no cross-loss
-                loss_recon = self.lambdaA * loss_recon_infA + self.lambdaB * loss_recon_infB + loss_recon_POE
-                # supervised, cross-loss
-                if self.cross_loss:
-                    # cross shared
-                    loss_reconA_sinfB = reconstruction_loss(XA, torch.sigmoid(XA_sinfB_recon).view(XA.shape[0], -1, 28, 28),
-                                                            distribution="bernoulli")
-                    loss_reconB_sinfA = cross_entropy_label(XB_sinfA_recon, XB)
-                    loss_cross = self.lambdaA * loss_reconA_sinfB + self.lambdaB * loss_reconB_sinfA
-                    loss_recon += loss_cross
-
-
-
-            #================================== decomposed KL ========================================
-
-            if self.categ:
-                log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A = self.log_prob(ZA_infA, ZS_infA, muA_infA, logvarA_infA, relaxedCategA)
-                log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B = self.log_prob(ZB_infB, ZS_infB, muB_infB, logvarB_infB, relaxedCategB)
-                log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA = self.log_prob(ZA_infA, ZS_POE, muA_infA, logvarA_infA, relaxedCategS)
-                log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB = self.log_prob(ZB_infB, ZS_POE, muB_infB, logvarB_infB, relaxedCategS)
-                if self.cross_loss:
-                    log_pz_A_sB, log_qz_A_sB, log_prod_qzi_A_sB, log_q_zCx_A_sB = self.log_prob(ZA_infA, ZS_infB, muA_infA, logvarA_infA, relaxedCategB)
-                    log_pz_B_sA, log_qz_B_sA, log_prod_qzi_B_sA, log_q_zCx_B_sA = self.log_prob(ZB_infB, ZS_infA, muB_infB, logvarB_infB, relaxedCategA)
-            else:
-                log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A, _ = get_log_pz_qz_prodzi_qzCx(
-                    {'cont':  torch.cat((ZA_infA, ZS_infA), dim=1)}, {'cont': (torch.cat((muA_infA, muS_infA), dim=1),  torch.cat((logvarA_infA, logvarS_infA), dim=1))},
-                    len(self.data_loader.dataset),
-                    is_mss=self.is_mss)
-
-                log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B, _ = get_log_pz_qz_prodzi_qzCx(
-                    {'cont': torch.cat((ZB_infB, ZS_infB), dim=1)}, {'cont': (torch.cat((muB_infB, muS_infB), dim=1), torch.cat((logvarB_infB, logvarS_infB), dim=1))},
-                    len(self.data_loader.dataset),
-                    is_mss=self.is_mss)
-
-                log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA, _ = get_log_pz_qz_prodzi_qzCx(
-                    {'cont': torch.cat((ZA_infA, ZS_POE), dim=1)}, {'cont': (torch.cat((muA_infA, muS_POE), dim=1), torch.cat((logvarA_infA, logvarS_POE), dim=1))},
-                    len(self.data_loader.dataset),
-                    is_mss=self.is_mss)
-
-                log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB, _ = get_log_pz_qz_prodzi_qzCx(
-                    {'cont': torch.cat((ZB_infB, ZS_POE), dim=1)}, {'cont': (torch.cat((muB_infB, muS_POE), dim=1), torch.cat((logvarB_infB, logvarS_POE), dim=1))},
-                    len(self.data_loader.dataset),
-                    is_mss=self.is_mss)
-            # loss_kl_infA
-            mi_loss_A, tc_loss_A, dw_kl_loss_A, loss_kl_infA = self.kl_loss(log_pz_A, log_qz_A, log_prod_qzi_A, log_q_zCx_A)
-            # loss_kl_infB
-            mi_loss_B, tc_loss_B, dw_kl_loss_B, loss_kl_infB = self.kl_loss(log_pz_B, log_qz_B, log_prod_qzi_B, log_q_zCx_B)
-            # loss_kl_POEA
-            mi_loss_POEA, tc_loss_POEA, dw_kl_loss_POEA, loss_kl_POEA = self.kl_loss(log_pz_POEA, log_qz_POEA, log_prod_qzi_POEA, log_q_zCx_POEA)
-            # loss_kl_POEB
-            mi_loss_POEB, tc_loss_POEB, dw_kl_loss_POEB, loss_kl_POEB = self.kl_loss(log_pz_POEB, log_qz_POEB, log_prod_qzi_POEB, log_q_zCx_POEB)
-            # loss_kl_POE
-            loss_kl_POE = 0.5 * (loss_kl_POEA + loss_kl_POEB)
-
-            # unsupervised
-            if self.unsup:
-                loss_kl = 1.5 * (loss_kl_infA + loss_kl_infB)
-                tc_loss = 1.5 * (tc_loss_A + tc_loss_B)
-                mi_loss = 1.5 * (mi_loss_A + mi_loss_B)
-                dw_kl_loss = 1.5 * (dw_kl_loss_A + dw_kl_loss_B)
-            if not self.unsup or iteration % 100 == 0:
-                # supervised, no cross-lss
-                loss_kl = loss_kl_infA + loss_kl_infB + loss_kl_POE
-                tc_loss = tc_loss_A + tc_loss_B + 0.5 * (tc_loss_POEA + tc_loss_POEB)
-                mi_loss = mi_loss_A + mi_loss_B + 0.5 * (mi_loss_POEA + mi_loss_POEB)
-                dw_kl_loss = dw_kl_loss_A + dw_kl_loss_B + 0.5 * (dw_kl_loss_POEA + dw_kl_loss_POEB)
-                # supervised, cross-lss
-                if self.cross_loss:
-                    # loss_kl_infA_sB
-                    mi_loss_A_sB, tc_loss_A_sB, dw_kl_loss_A_sB, loss_kl_infA_sB = self.kl_loss(log_pz_A_sB, log_qz_A_sB,
-                                                                                                log_prod_qzi_A_sB,
-                                                                                                log_q_zCx_A_sB)
-                    # loss_kl_infB_sA
-                    mi_loss_B_sA, tc_loss_B_sA, dw_kl_loss_B_sA, loss_kl_infB_sA = self.kl_loss(log_pz_B_sA, log_qz_B_sA,
-                                                                                                log_prod_qzi_B_sA,
-                                                                                                log_q_zCx_B_sA)
-                    loss_kl += loss_kl_infA_sB + loss_kl_infB_sA
-                    tc_loss += tc_loss_A_sB + tc_loss_B_sA
-                    mi_loss += mi_loss_A_sB + mi_loss_B_sA
-                    dw_kl_loss += dw_kl_loss_A_sB + dw_kl_loss_B_sA
-
-
-
+            loss_recon += paired_loss_recon
+            loss_recon_infA += paired_loss_recon_infA
+            loss_recon_infB += paired_loss_recon_infB
+            loss_recon_POE += paired_loss_recon_POE
+            loss_kl += paired_loss_kl
+            tc_loss += paired_tc_loss
+            mi_loss += paired_mi_loss
+            dw_kl_loss += paired_dw_kl_loss
 
             ################## total loss for vae ####################
             vae_loss = loss_recon + loss_kl
@@ -454,13 +471,11 @@ class Solver(object):
                 prn_str = ( \
                                       '[iter %d (epoch %d)] vae_loss: %.3f ' + \
                                       '(recon: %.3f, kl: %.3f)\n' + \
-                                      '    rec_infA = %.3f, rec_infB = %.3f, rec_POE = %.3f\n' + \
-                                      '    kl_infA = %.3f, kl_infB = %.3f, kl_POE = %.3f'
+                                      '    rec_infA = %.3f, rec_infB = %.3f, rec_POE = %.3f\n'
                               ) % \
                           (iteration, epoch,
                            vae_loss.item(), loss_recon.item(), loss_kl.item(),
-                           loss_recon_infA.item(), loss_recon_infB.item(), loss_recon_POE.item(),
-                           loss_kl_infA.item(), loss_kl_infB.item(), loss_kl_POE.item()
+                           loss_recon_infA.item(), loss_recon_infB.item(), loss_recon_POE.item()
                            )
 
                 print(prn_str)
@@ -530,24 +545,9 @@ class Solver(object):
                                         recon_both=loss_recon_POE.item(),
                                         recon_A=loss_recon_infA.item(),
                                         recon_B=loss_recon_infB.item(),
-                                        kl_A=loss_kl_infA.item(),
-                                        kl_B=loss_kl_infB.item(),
-                                        kl_POE=loss_kl_POE.item(),
                                         tc_loss=tc_loss.item(),
                                         mi_loss=mi_loss.item(),
                                         dw_kl_loss=dw_kl_loss.item(),
-                                        tc_loss_A=tc_loss_A.item(),
-                                        mi_loss_A=mi_loss_A.item(),
-                                        dw_kl_loss_A=dw_kl_loss_A.item(),
-                                        tc_loss_B=tc_loss_B.item(),
-                                        mi_loss_B=mi_loss_B.item(),
-                                        dw_kl_loss_B=dw_kl_loss_B.item(),
-                                        tc_loss_POEA=tc_loss_POEA.item(),
-                                        mi_loss_POEA=mi_loss_POEA.item(),
-                                        dw_kl_loss_POEA=dw_kl_loss_POEA.item(),
-                                        tc_loss_POEB=tc_loss_POEB.item(),
-                                        mi_loss_POEB=mi_loss_POEB.item(),
-                                        dw_kl_loss_POEB=dw_kl_loss_POEB.item(),
                                         marginal_ll_A_infA=marginal_ll_A_infA.item(),
                                         marginal_ll_A_poe=marginal_ll_A_poe.item(),
                                         marginal_ll_A_pAsB=marginal_ll_A_pAsB.item(),
@@ -1829,7 +1829,7 @@ class Solver(object):
     def viz_init(self):
 
         self.viz.close(env=self.name + '/lines', win=self.win_id['recon'])
-        self.viz.close(env=self.name + '/lines', win=self.win_id['kl'])
+        # self.viz.close(env=self.name + '/lines', win=self.win_id['kl'])
         # self.viz.close(env=self.name + '/lines', win=self.win_id['acc'])
         self.viz.close(env=self.name + '/lines', win=self.win_id['tc'])
         self.viz.close(env=self.name + '/lines', win=self.win_id['mi'])
@@ -1852,37 +1852,26 @@ class Solver(object):
         recon_both = torch.Tensor(data['recon_both'])
         recon_A = torch.Tensor(data['recon_A'])
         recon_B = torch.Tensor(data['recon_B'])
-        kl_A = torch.Tensor(data['kl_A'])
-        kl_B = torch.Tensor(data['kl_B'])
-        kl_POE = torch.Tensor(data['kl_POE'])
-
-        # poeA_acc = torch.Tensor(data['poeA_acc'])
-        # infA_acc = torch.Tensor(data['infA_acc'])
-        # synA_acc = torch.Tensor(data['synA_acc'])
-        # poeB_acc = torch.Tensor(data['poeB_acc'])
-        # infB_acc = torch.Tensor(data['infB_acc'])
-        # synB_acc = torch.Tensor(data['synB_acc'])
-
-        # acc_ZS_infA = torch.Tensor(data['acc_ZS_infA'])
-        # acc_ZS_infB = torch.Tensor(data['acc_ZS_infB'])
-        # acc_ZS_POE = torch.Tensor(data['acc_ZS_POE'])
+        # kl_A = torch.Tensor(data['kl_A'])
+        # kl_B = torch.Tensor(data['kl_B'])
+        # kl_POE = torch.Tensor(data['kl_POE'])
 
         tc_loss = torch.Tensor(data['tc_loss'])
         mi_loss =  torch.Tensor(data['mi_loss'])
         dw_kl_loss =  torch.Tensor(data['dw_kl_loss'])
 
-        tc_loss_A = torch.Tensor(data['tc_loss_A'])
-        mi_loss_A =  torch.Tensor(data['mi_loss_A'])
-        dw_kl_loss_A =  torch.Tensor(data['dw_kl_loss_A'])
-        tc_loss_B = torch.Tensor(data['tc_loss_B'])
-        mi_loss_B =  torch.Tensor(data['mi_loss_B'])
-        dw_kl_loss_B =  torch.Tensor(data['dw_kl_loss_B'])
-        tc_loss_POEA = torch.Tensor(data['tc_loss_POEA'])
-        mi_loss_POEA =  torch.Tensor(data['mi_loss_POEA'])
-        dw_kl_loss_POEA =  torch.Tensor(data['dw_kl_loss_POEA'])
-        tc_loss_POEB = torch.Tensor(data['tc_loss_POEB'])
-        mi_loss_POEB =  torch.Tensor(data['mi_loss_POEB'])
-        dw_kl_loss_POEB =  torch.Tensor(data['dw_kl_loss_POEB'])
+        # tc_loss_A = torch.Tensor(data['tc_loss_A'])
+        # mi_loss_A =  torch.Tensor(data['mi_loss_A'])
+        # dw_kl_loss_A =  torch.Tensor(data['dw_kl_loss_A'])
+        # tc_loss_B = torch.Tensor(data['tc_loss_B'])
+        # mi_loss_B =  torch.Tensor(data['mi_loss_B'])
+        # dw_kl_loss_B =  torch.Tensor(data['dw_kl_loss_B'])
+        # tc_loss_POEA = torch.Tensor(data['tc_loss_POEA'])
+        # mi_loss_POEA =  torch.Tensor(data['mi_loss_POEA'])
+        # dw_kl_loss_POEA =  torch.Tensor(data['dw_kl_loss_POEA'])
+        # tc_loss_POEB = torch.Tensor(data['tc_loss_POEB'])
+        # mi_loss_POEB =  torch.Tensor(data['mi_loss_POEB'])
+        # dw_kl_loss_POEB =  torch.Tensor(data['dw_kl_loss_POEB'])
 
         marginal_ll_A_infA = torch.Tensor(data['marginal_ll_A_infA'])
         marginal_ll_A_poe = torch.Tensor(data['marginal_ll_A_poe'])
@@ -1902,19 +1891,17 @@ class Solver(object):
         recons = torch.stack(
             [recon_both.detach(), recon_A.detach(), recon_B.detach()], -1
         )
-        kls = torch.stack(
-            [kl_A.detach(), kl_B.detach(), kl_POE.detach()], -1
-        )
+
         tc = torch.stack(
-            [tc_loss.detach(), tc_loss_A.detach(), tc_loss_B.detach(), tc_loss_POEA.detach(), tc_loss_POEB.detach()], -1
+            [tc_loss.detach()], -1
         )
 
         mi = torch.stack(
-            [mi_loss.detach(), mi_loss_A.detach(), mi_loss_B.detach(), mi_loss_POEA.detach(), mi_loss_POEB.detach()], -1
+            [mi_loss.detach()], -1
         )
 
         dw_kl = torch.stack(
-            [dw_kl_loss.detach(), dw_kl_loss_A.detach(), dw_kl_loss_B.detach(), dw_kl_loss_POEA.detach(), dw_kl_loss_POEB.detach()], -1
+            [dw_kl_loss.detach()], -1
         )
 
         acc = torch.stack(
@@ -1939,33 +1926,33 @@ class Solver(object):
             opts=dict(xlabel='iter', ylabel='recon losses',
                       title='Recon Losses', legend=['both', 'A', 'B'])
         )
-
-        self.viz.line(
-            X=iters, Y=kls, env=self.name + '/lines',
-            win=self.win_id['kl'], update='append',
-            opts=dict(xlabel='iter', ylabel='kl losses',
-                      title='KL Losses', legend=['A', 'B', 'POE']),
-        )
+        #
+        # self.viz.line(
+        #     X=iters, Y=kls, env=self.name + '/lines',
+        #     win=self.win_id['kl'], update='append',
+        #     opts=dict(xlabel='iter', ylabel='kl losses',
+        #               title='KL Losses', legend=['A', 'B', 'POE']),
+        # )
 
         self.viz.line(
             X=iters, Y=tc, env=self.name + '/lines',
             win=self.win_id['tc'], update='append',
             opts=dict(xlabel='iter', ylabel='loss',
-                      title='tc', legend=['tc', 'tc_infA', 'tc_infB', 'tc_poeA', 'tc_poeB']),
+                      title='tc', legend=['tc']),
         )
 
         self.viz.line(
             X=iters, Y=mi, env=self.name + '/lines',
             win=self.win_id['mi'], update='append',
             opts=dict(xlabel='iter', ylabel='loss',
-                      title='mi', legend=['mi', 'mi_infA', 'mi_infB', 'mi_poeA', 'mi_poeB']),
+                      title='mi', legend=['mi']),
         )
 
         self.viz.line(
             X=iters, Y=dw_kl, env=self.name + '/lines',
             win=self.win_id['dw_kl'], update='append',
             opts=dict(xlabel='iter', ylabel='loss',
-                      title='dw_kl', legend=['dw_kl', 'dw_kl_infA', 'dw_kl_infB', 'dw_kl_poeA', 'dw_kl_poeB']))
+                      title='dw_kl', legend=['dw_kl']))
         self.viz.line(
             X=iters, Y=acc, env=self.name + '/lines',
             win=self.win_id['acc'], update='append',
