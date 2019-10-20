@@ -442,30 +442,20 @@ class Solver(object):
                 XA = XA.cuda()
                 XB = XB.cuda()
 
-            if self.unsup:
-                loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(False,XA,XB)
-            else:
-                loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(
-                    True, XA, XB)
-            # paired_loss_recon, paired_loss_recon_infA, paired_loss_recon_infB, paired_loss_recon_POE, paired_loss_kl, paired_tc_loss, paired_mi_loss, paired_dw_kl_loss = self.get_loss(
-            #     True, paired_XA, paired_XB)
 
-            # loss_recon += paired_loss_recon
-            # loss_recon_infA += paired_loss_recon_infA
-            # loss_recon_infB += paired_loss_recon_infB
-            # loss_recon_POE += paired_loss_recon_POE
-            # loss_kl += paired_loss_kl
-            # tc_loss += paired_tc_loss
-            # mi_loss += paired_mi_loss
-            # dw_kl_loss += paired_dw_kl_loss
 
             ################## total loss for vae ####################
-            vae_loss = loss_recon + loss_kl
+            # if self.unsup:
+            #     loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(False,XA,XB)
+            # else:
+            #     loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(
+            #         True, XA, XB)
+            # vae_loss = loss_recon + loss_kl
+            # self.optim_vae.zero_grad()
+            # vae_loss.backward()
+            # self.optim_vae.step()
+            ###########################################################
 
-            ####### update vae ##########
-            self.optim_vae.zero_grad()
-            vae_loss.backward()
-            self.optim_vae.step()
 
             #################### for fixed paired in unsuper. ################
             if self.unsup:
