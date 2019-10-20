@@ -445,20 +445,20 @@ class Solver(object):
 
 
             ################## total loss for vae ####################
-            # if self.unsup:
-            #     loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(False,XA,XB)
-            # else:
-            #     loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(
-            #         True, XA, XB)
-            # vae_loss = loss_recon + loss_kl
-            # self.optim_vae.zero_grad()
-            # vae_loss.backward()
-            # self.optim_vae.step()
+            if self.unsup:
+                loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(False,XA,XB)
+            else:
+                loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(
+                    True, XA, XB)
+            vae_loss = loss_recon + loss_kl
+            self.optim_vae.zero_grad()
+            vae_loss.backward()
+            self.optim_vae.step()
             ###########################################################
 
 
             #################### for fixed paired in unsuper. ################
-            if self.unsup:
+            if self.unsup and iteration % 600 == 0:
                 loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(
                     True, paired_XA, paired_XB)
                 vae_loss = loss_recon + loss_kl
