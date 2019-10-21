@@ -452,21 +452,19 @@ class Solver(object):
                     True, XA, XB)
             vae_loss = loss_recon + loss_kl
             self.optim_vae.zero_grad()
-            vae_loss.backward()
-            self.optim_vae.step()
+            vae_loss.backward(retain_graph=True)
+
             ###########################################################
 
 
             #################### for fixed paired in unsuper. ################
-            if self.unsup and iteration % 600 == 0:
+            if self.unsup and iteration % 50 == 0:
                 loss_recon, loss_recon_infA, loss_recon_infB, loss_recon_POE, loss_kl, tc_loss, mi_loss, dw_kl_loss = self.get_loss(
                     True, paired_XA, paired_XB)
-                vae_loss = loss_recon + loss_kl
-                self.optim_vae.zero_grad()
-                vae_loss.backward()
-                self.optim_vae.step()
+                sup_vae_loss = loss_recon + loss_kl
+                sup_vae_loss.backward()
             ###########################################################
-
+            self.optim_vae.step()
             # print the losses
             if iteration % self.print_iter == 0:
                 prn_str = ( \
